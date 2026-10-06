@@ -1,0 +1,34 @@
+# Arduino compilation products
+/build/
+**/build/
+*.hex
+*.elf
+*.eep
+*.o
+*.a
+*.d
+*.map
+*.bin
+compile_commands.json
+
+# Machine-specific editor settings; share recommendations only
+/.vscode/*
+!/.vscode/extensions.json
+*.code-workspace
+
+# Local tools, profiles, and scratch files
+/.tools/
+/.arduino-local/
+*.log
+*.tmp
+*.bak
+*~
+
+# Original unnamed local reference images (kept on the current PC)
+/image.jpg
+/rn_image_picker_lib_temp_*.webp
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
