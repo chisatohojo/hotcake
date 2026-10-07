@@ -275,9 +275,14 @@ arduino-cli monitor --port $megaPort --config baudrate=115200
 未接続や不正値はERR。終了はCtrl+C。
 実測結果をHANDOFFへ記録し、MD20A単体試験を別工程として準備します。
 
-現在の残件はOLED_INIT=ERR（I2C scanは0x29のみ）、START_SWのLOW固定、D9/D12端子電圧未実測です。
+OLEDはSDA→Mega D20、SCK→Mega D21への誤配線修正で解決済みです。
+I2C scanで0x29と0x3Cを検出し、OLED_INIT=OK、TOF_INIT=OK。同一I2Cバスで正常に共存しています。
+開始SWは配線修正済み・再ログ確認待ちで、通常HIGH／押下LOWの遷移とブザー動作結果は未記録です。
+D9/D12の端子電圧実測は未実施です。A0/A1/A2の両端・中間の実機確認結果は未記録です。
 PT100の固定抵抗は実物確認済みの1kΩ、コードは `PT100_SERIES_RESISTOR_OHM=1000.0F` です。
-修正版の実機温度比較・校正は未実施。詳細な実機記録は[HANDOFF](HANDOFF.md)を参照してください。
+1kΩ修正版の数値表示は確認済みですが、基準温度計との比較・校正と最終温度制御精度の確認は未実施です。
+ToFは通信・正常測距実績があり、取付条件は未確定です。MD20A単体試験は未実施、将来の初期PWMは50%予定です。
+詳細な実機記録と次の確認順序は[HANDOFF](HANDOFF.md)を参照してください。
 
 ## 人間が行う作業
 
