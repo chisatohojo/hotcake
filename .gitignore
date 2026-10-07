@@ -11,9 +11,11 @@
 *.bin
 compile_commands.json
 
-# Machine-specific editor settings; share recommendations only
+# Share portable editor settings and tasks; ignore other local editor files
 /.vscode/*
 !/.vscode/extensions.json
+!/.vscode/tasks.json
+!/.vscode/settings.json
 *.code-workspace
 
 # Local tools, profiles, and scratch files

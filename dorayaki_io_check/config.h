@@ -51,7 +51,7 @@ constexpr float ANALOG_FILTER_ALPHA = 0.20F;
 // Circuit: 5V -- series resistor -- A7 -- PT100 -- GND
 // Rpt100 = series_resistor * ADC / (1023 - ADC)
 // -----------------------------------------------------------------------------
-constexpr float PT100_SERIES_RESISTOR_OHM = 100.0F;
+constexpr float PT100_SERIES_RESISTOR_OHM = 1000.0F; // Actual divider resistor: 1 kOhm
 constexpr float PT100_R0_OHM = 100.0F;
 constexpr float PT100_CVD_A = 3.9083e-3F;
 constexpr float PT100_CVD_B = -5.775e-7F;

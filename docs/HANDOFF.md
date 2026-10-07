@@ -1,9 +1,10 @@
 # 開発引き継ぎ
 
-2026-10-06現在、**第1段階 I/O・センサ確認版まで完成**。
-Arduino Mega 2560 Rev3用のコードとクリーンcompileを確認済みです。
-現在のPCはユーザー申告では動作・compile確認済みですが、測定条件付きの実機試験記録はありません。
-今回の引き継ぎ作業で実機試験を実施したとは扱わないでください。
+2026-10-07現在、**第1段階 I/O・センサ確認版まで完成**。
+このWindows PCでは `.arduino-local/` に開発環境を分離し、Mega 2560向けクリーンcompileに成功しました。
+ユーザーからCOM4へのupload、起動ログ、ToF測距等の実機確認結果を受領しています。
+OLED初期化ERR、開始SWのLOW固定、D9/D12の端子電圧未実測が残っています。
+ユーザーの確認結果と、エージェントが実行したcompileを区別して記録します。
 
 ## 完了済み
 
@@ -12,6 +13,10 @@ Arduino Mega 2560 Rev3用のコードとクリーンcompileを確認済みです
 - 開始SWのデバウンスと押下時ブザー。
 - 起動時とloopで安全出力を維持する処理。
 - 実環境を根拠にしたバージョン固定、Windows構築・検証スクリプトと構築文書。
+- `.tools/` で使っていた専用環境の設定を `scripts/common.ps1` へ移植。
+  setup/verifyが自動で `.arduino-local/` を選び、CLIのユーザーZIP配置も検出する。
+- 汎用のVS Code設定とタスクをGit管理。Ctrl+Shift+Bで正本のverifyを直接実行。
+- 固定抵抗の実物確認に基づき、PT100分圧用抵抗を1kΩ（`1000.0F`）へ修正。
 - ソースと過去の手書き資料を保存。バージョン・検証条件は[ENVIRONMENT](ENVIRONMENT.md)を参照。
 
 ## 安全上の重要事項
@@ -26,18 +31,21 @@ SSRのHIGHは加熱ONなので、安全状態を切り替える試験コード�
 最初は加熱・モータ電源を切り離し、D9/D12を実測してから負荷側の接続を判断します。
 SerialログのOFF/0だけで端子が安全と判断しないでください。
 
-PT100は5V・100Ωの直接分圧という現行指定です。常温で約24mAが流れる計算になり、
-自己発熱や抵抗定格・実測精度の確認が必要です。これは配線・温度測定を完了扱いにしないための確認項目です。
+PT100は5V・1kΩ固定抵抗の直接分圧です。従来文書の100Ωは実物確認結果により訂正しました。
+`PT100_SERIES_RESISTOR_OHM=1000.0F`、PT100の0℃基準抵抗は `PT100_R0_OHM=100.0F` です。
+抵抗の詳細な実測値・公差、基準温度との比較、自己発熱・抵抗定格・測定精度は確認が必要です。
 コードのPT100有効判定は保護制御ではありません。加熱制御へ転用する前に異常処理を設計してください。
 
 ## 次の実機確認順序
 
-1. Megaへ現行I/O版を書き込み。モータ・加熱電源は切り離す。
+1. モータ・加熱電源を切り離し、1kΩ修正版の最新compile成果物をMegaへ人間が書き込む。
+   COM4はこのPCの確認値で、次PCではボードとポートを再照合する。
 2. 電源投入・リセット・開始SW押下時もD9がPWM=0、D12がLOWであることを実測。
-3. OLEDとToFを確認。I2C 0x3C/0x29、OLED_INIT/TOF_INIT、距離変化・測距不能時ERRを記録。
+3. OLEDの配線・電源・アドレスを確認。現在はI2C 0x29のみでOLED_INIT=ERR。
+   0x3C/0x29の検出、OLED_INIT/TOF_INIT、ToFの対象条件とstatus=2発生条件を記録する。
 4. A0/A1/A2の両端・中間を確認。温度150～300℃、時間1～10秒、高さ0～300mm。
 5. PT100を常温で基準温度計と比較。分圧抵抗実測値、ADC、自己発熱、誤差を記録。断線・短絡時ERRも確認。
-6. 開始SWが通常HIGH／押下LOW、NO接点・外付けプルアップであることを確認。
+6. START_SWがLOWのままになる配線を確認。通常HIGH／押下LOW、NO接点・外付けプルアップを照合する。
    30msデバウンスと100msブザーを確認し、ブザー種別・論理を確定。
 7. 以上の記録を残した後、**別の明示的なMD20A単体試験**に進む。現行I/O版はPWM=0のまま保存する。
 
@@ -48,6 +56,8 @@ DIR HIGH/LOWと上下方向、ToF距離の増減と移動方向、全ストロ�
 
 ## 未完了・未確定
 
+- D9/D12の端子電圧実測、OLEDの配線・電源・アドレス、開始SWのLOW固定の解消。
+- 1kΩ修正版の再uploadとPT100の常温比較。今回の修正後はcompileのみ実施。
 - ToF取付位置、測定対象面、原点距離、距離から高さへの換算・有効測距範囲。
 - リミットSWなしでの原点復帰、測距異常時停止、移動タイムアウト、再起動・異常復帰。
 - DIR極性、実ストローク・移動時間・適切なPWM。50%は試験予定値。
@@ -58,26 +68,48 @@ DIR HIGH/LOWと上下方向、ToF距離の増減と移動方向、全ストロ�
 ## 再開方法
 
 [NEW_PC_SETUP](NEW_PC_SETUP.md)の順に構築し、setupとverifyが終了コード0になることを確認。
+CLI 1.5.1、AVR Boards 1.8.8、指定4ライブラリは `scripts/environment.lock.json` が正本です。
+次PCへはGitHub mainをcloneし、キャッシュをコピーせず専用環境を再構築します。
+`.tools/` はローカル互換用のみで引き継ぎ不要です。正本のコマンド:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1 -InstallExtensions
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify_environment.ps1
+```
+
+2026-10-07に、共有ファイルだけを空白を含む別フォルダへコピーし、`.tools/` なし・空の
+`.arduino-local/` からsetupを実行して、固定パッケージの導入とclean compileが終了コード0になることを確認。
+CLIとVS CodeはこのPCの導入済みツールを使用した検証で、Windows自体の新規インストール試験ではありません。
+既存のグローバルArduino環境を保持し、Flash 34,146 bytes／静的RAM 1,488 bytesでした。
+
 新PCでCodexへ最初に渡す指示:
 
 ```text
-AGENTS.md、README.md、docs/HANDOFF.md、docs/NEW_PC_SETUP.mdを読んでください。
+https://github.com/chisatohojo/hotcake.git のmainをこのPCへ引き継ぎます。
+リポジトリを取得し、AGENTS.md、README.md、docs/HANDOFF.md、docs/NEW_PC_SETUP.md、
+scripts/environment.lock.jsonとgit status・git diffを確認してください。
 現在の第1段階I/O版のSSR=LOW、モータPWM=0を維持してください。
+PT100の分圧用固定抵抗は実物確認済みの1kΩで、設定は1000.0Fです。
 実環境を調査し、不足する環境をNEW_PC_SETUP.mdとenvironment.lock.jsonに従って構築し、
-VS Code推奨拡張を導入してsetup_windows.ps1とverify_environment.ps1を実行してください。
+VS Code推奨拡張を導入してscripts/setup_windows.ps1とscripts/verify_environment.ps1を実行してください。
+両スクリプトが自動選択する.arduino-local/を使い、既存Arduino環境を上書きしないでください。
+.tools/やPC固有のキャッシュは不要です。Ctrl+Shift+Bのタスクも確認してください。
 管理者操作とログインが必要なら具体的な手順を示してください。
 ソースを変更せず、Mega 2560向けクリーンcompile結果と版番号を報告してください。
-uploadとモータ・加熱の実機動作は行わないでください。
+COM4は前PCのポートです。実機uploadやモータ駆動・加熱動作は行わないでください。
+OLED初期化ERR、START_SWのLOW固定、端子電圧未実測、PT100校正未実施の残件を引き継いでください。
 ```
 
 実機試験の記録を得たら、下表とREADMEの現在段階・未確定項目を更新してください。
 
 | 項目 | 状態 | 日時・測定条件・結果 |
 |---|---|---|
-| 新PC compile | 未実施 | 新PC構築後に記入 |
-| Mega upload / D9・D12実測 | 未記録 | 書き込み版、端子値、起動・リセット条件 |
-| OLED / ToF | 未記録 | アドレス、距離、エラー時挙動 |
+| このPCのcompile | 成功 | 2026-10-07（日本時間）、Windows x64／PowerShell 5.1。CLI 1.5.1、AVR 1.8.8、固定4ライブラリを `.arduino-local/` に導入。1kΩ修正後に正本のverifyでclean compile成功、終了コード0。Flash 34,146 bytes／静的RAM 1,488 bytes。 |
+| Mega upload / 起動 | ユーザー確認済み | Mega 2560 COM4へのupload成功、起動ログ確認済み。書き込み元の版・詳しい測定日時は未記録。今回の1kΩ修正版の再uploadは未実施。 |
+| D9 / D12 | ログのみ確認 | SSRログ上OFF、モータPWMログ上0。端子電圧実測は未実施。 |
+| OLED / I2C | 要確認 | OLED初期化ERR。I2C scanは0x29のみ検出。OLED配線・電源・アドレス確認が必要。 |
+| ToF | 一部確認済み | 初期化OK。62～65mm、status=0で正常測距。対象条件によってstatus=2も発生。対象材・距離・角度等の詳細条件は未記録。 |
 | A0 / A1 / A2 | 未記録 | 両端・中間の表示 |
-| PT100 | 未記録 | 基準温度、ADC、抵抗、誤差、故障時 |
-| SW / ブザー | 未記録 | 入力論理、チャタリング、採用品 |
+| PT100 | 抵抗確認・設定修正 | PT100_ADC=100を確認。固定抵抗をユーザーが実測・実物確認した結果1kΩ。設定を1000.0Fへ修正。温度比較・校正と修正後ログは未確認。 |
+| SW / ブザー | 要確認 | START_SWはログ上LOWのまま。配線・外付けプルアップ・NO接点確認が必要。押下遷移・ブザー動作は未記録。 |
 | MD20A単体試験 | 未実施 | DIR、ToF増減、ストローク時間、PWM、停止方法 |

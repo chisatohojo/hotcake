@@ -3,7 +3,9 @@
 Arduino Mega 2560 Rev3で、焼き印用はんだごて、MD20A経由のリニアアクチュエータ、
 OLED、ToF、PT100、設定用可変抵抗を扱うプロジェクトです。
 **現在は「第1段階 I/O・センサ確認版まで完成」**。自動焼印、加熱制御、モータ駆動は未実装です。
-2026-10-06に現行ソースのクリーンコンパイルを確認しました。実機確認の記録はまだありません。
+2026-10-07にこのPCの専用Arduino環境でMega 2560向けクリーンコンパイルを確認しました。
+COM4へのuploadと起動ログ、ToFの正常測距はユーザー確認済みです。
+OLED初期化ERR、開始SWのLOW固定が残り、D9/D12の端子電圧は未実測です。
 
 **現行I/O版ではSSRは絶対にLOW、モータPWMは絶対に0。** 起動時と毎回のloopで維持します。
 開始スイッチを押しても、ブザーのみが作動します。
@@ -39,7 +41,7 @@ GitHubリポジトリ名は `hotcake`、対象装置はたい焼き焼印装置�
 | A0 | 温度設定可変抵抗 | 150～300℃ |
 | A1 | 時間設定可変抵抗 | 1～10秒 |
 | A2 | 高さ設定可変抵抗 | 0～300mm |
-| A7 | PT100 | 100Ω抵抗とPT100の分圧入力 |
+| A7 | PT100 | 実物確認した1kΩ固定抵抗とPT100の分圧入力 |
 | D4 | 開始SW | 外付けプルアップ、NO接点、通常HIGH／押下LOW |
 | D5 | ブザー | 暫定でアクティブ、HIGH=ON |
 | D8 | MD20A DIR | 暫定LOW。HIGH/LOWと上下方向の関係は未確定 |
@@ -57,12 +59,12 @@ GitHubリポジトリ名は `hotcake`、対象装置はたい焼き焼印装置�
 - 加熱: SSR経由の焼き印用はんだごて。SSR・電源等の型番と配線詳細は未記録。
 - リミットSWは使用せず、将来はToFのみで初期位置・高さを判断する計画。取付位置・原点距離は未確定。
 
-PT100の入力回路（ユーザー指定、抵抗の実測・校正は未実施）:
+PT100の入力回路（固定抵抗はユーザーの実測・実物確認で1kΩ、温度校正は未実施）:
 
 ```text
 5V
  |
-100Ω
+1kΩ
  |
 +---- A7
  |
@@ -70,6 +72,9 @@ PT100
  |
 GND
 ```
+
+`config.h` の `PT100_SERIES_RESISTOR_OHM` は `1000.0F` に修正済みです。
+PT100自体の0℃基準抵抗 `PT100_R0_OHM=100.0F` はそのままです。
 
 可変抵抗は両端を5V/GND、摺動端子を対応するA0/A1/A2へ接続します。
 開始SWはD4の外付けプルアップとGNDへのNO接点を使用します。
@@ -82,6 +87,8 @@ GND
 
 リポジトリルートのWindows PowerShellで実行します。
 Git、Arduino CLI 1.5.1が必要です。初回のインストール手順は[新PC構築手順](docs/NEW_PC_SETUP.md)を参照。
+setupとverifyは毎回、リポジトリ内の `.arduino-local/` を自動選択します。
+別プロジェクトのコア・ライブラリを上書きせず、`.tools/` のコピーも不要です。
 
 ```powershell
 # 固定コア・ライブラリを導入し、環境検証とクリーンcompileまで実行
@@ -91,11 +98,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1 
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify_environment.ps1
 ```
 
+共有の `.vscode/tasks.json` により、VS Codeでこのフォルダを開いて **Ctrl+Shift+B** でも
+同じverify・クリーンcompileを実行できます。補完・新規ターミナルの専用環境設定も共有済みです。
+
 ビルド生成物は無視対象の `build/verify-<一意ID>` に保存されます。
-手動で書き込み用のビルドを作る場合:
+手動でArduino CLIを使う場合は、VS Codeの新規ターミナルを使うか、同じPowerShellで専用環境を設定します。
+子PowerShellのsetup/verifyで設定した環境変数は、親シェルには戻りません。
+書き込み用ビルドを作る例:
 
 ```powershell
+$localArduinoRoot = Join-Path (Get-Location).Path '.arduino-local'
+$env:ARDUINO_DIRECTORIES_DATA = Join-Path $localArduinoRoot 'data'
+$env:ARDUINO_DIRECTORIES_DOWNLOADS = Join-Path $localArduinoRoot 'downloads'
+$env:ARDUINO_DIRECTORIES_USER = Join-Path $localArduinoRoot 'user'
 arduino-cli compile --clean --fqbn arduino:avr:mega:cpu=atmega2560 --build-path .\build\mega2560 .\dorayaki_io_check
+if ($LASTEXITCODE -ne 0) { throw 'Compile failed; do not upload old artifacts' }
 ```
 
 固定対象はCLI 1.5.1、AVR Boards 1.8.8、BusIO 1.17.4、GFX 1.12.6、SSD1306 2.5.17、
@@ -121,8 +138,21 @@ Serial Monitor終了はCtrl+C。書き込み時は他アプリのモニタを閉
 
 ## 次の実機テスト・未確定項目
 
-実施順は、Megaへ書き込み → D9/D12安全状態の実測 → OLED/ToF → A0/A1/A2 →
-PT100常温 → 開始SW/ブザー → MD20A単体試験です。
+2026-10-07に受領したユーザーの実機確認記録（エージェントが今回再測定した結果ではありません）:
+
+| 項目 | 確認結果・残件 |
+|---|---|
+| Mega 2560 | COM4へのupload成功、起動ログ確認済み。次PCではCOM番号を再確認する。 |
+| 安全出力 | ログ上SSR=OFF、MOTOR_PWM=0。D9/D12の端子電圧実測は未実施。 |
+| OLED / I2C | OLED初期化ERR。I2C scanで0x29のみ検出。OLED配線・電源・アドレスを確認する。 |
+| ToF | 初期化OK。62～65mm、status=0で正常測距。対象条件によってstatus=2も発生。 |
+| PT100 | PT100_ADC=100。固定抵抗を実測・実物確認した結果1kΩだったため設定を修正。温度校正は未実施。 |
+| 開始SW | START_SWはログ上LOWのまま。D4の外付けプルアップ・NO接点・配線を確認する。 |
+
+書き込み元の版、詳しい測定日時、ToFの対象条件、PT100の基準温度は未記録です。
+今回の1kΩ修正後はcompileで検証し、修正版の再upload・温度再測定は未実施です。
+次はD9/D12の実測、OLEDと開始SWの配線確認、1kΩ修正版でのPT100常温比較を行います。
+モータ・加熱の電源を切り離して進め、MD20A単体試験は別途明示した作業として扱います。
 詳細と記録方法は[HANDOFF](docs/HANDOFF.md)を参照してください。
 
 DIR極性、ToF距離と上下方向、取付位置・原点距離、全ストローク所要時間、

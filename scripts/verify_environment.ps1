@@ -4,6 +4,7 @@ param()
 
 try {
     . (Join-Path $PSScriptRoot 'common.ps1')
+    Initialize-ArduinoEnvironment
     Require-Command 'git'
     & git --version
     if ($LASTEXITCODE -ne 0) { throw 'git --version failed.' }

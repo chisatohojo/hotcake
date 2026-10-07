@@ -5,6 +5,10 @@ Git、VS Code、Codexのログイン・OS承認は人間が実施します。
 コア・ライブラリ導入とcompileはスクリプトで自動化できます。compileまでは実機不要です。
 ダウンロードとパッケージ導入にはインターネット接続が必要です。
 
+2026-10-07の引き継ぎから、setup/verifyは `.arduino-local/` の専用環境を自動で使用します。
+ローカルの `.tools/run.ps1 -Action Verify` にあった環境設定は `scripts/common.ps1` へ移植済みです。
+次PCへ `.tools/` や `.arduino-local/` のキャッシュをコピーする必要はありません。
+
 ## 1. Gitをインストール
 
 [Git for Windows公式](https://git-scm.com/install/windows)からインストール。
@@ -96,6 +100,11 @@ C/C++、Codex、日本語UI（任意）を推奨。拡張は旧PCの版に固定
 PlatformIOや旧Arduino拡張はビルドに不要です。
 手動導入を省略したい場合、手順8の `-InstallExtensions` で同じ一覧を導入できます。
 
+共有の `.vscode/tasks.json` は **Ctrl+Shift+B** で `scripts/verify_environment.ps1` を直接実行します。
+`.vscode/settings.json` はワークスペース・環境変数を使ったターミナルとC/C++補完の設定です。
+PC固有の絶対パスは含みません。フォルダをVS Codeで開き、ターミナルを新しく作成してください。
+変数の記法は[VS Code公式の変数リファレンス](https://code.visualstudio.com/docs/reference/variables-reference)を参照。
+
 ## 7. Arduino CLI 1.5.1を導入
 
 [公式インストール手順](https://arduino.github.io/arduino-cli/1.5/installation/)と
@@ -142,6 +151,8 @@ arduino-cli version # Version: 1.5.1 を確認
 
 見つからない場合はPathとPowerShell再起動を確認。
 異版が出る場合は `Get-Command arduino-cli -All` で優先される実行ファイルを確認します。
+setup/verifyは `$env:LOCALAPPDATA/ArduinoCLI/1.5.1/arduino-cli.exe` があればその配置を使用します。
+別の配置の場合はPATHから検出し、どちらもCLIの版を厳密に確認します。
 
 ## 8. AVRコアを導入（自動セットアップ開始）
 
@@ -156,11 +167,28 @@ if ($LASTEXITCODE -ne 0) { throw 'Setup failed; read the [FAIL] message' }
 ExecutionPolicy Bypassは子PowerShellに限定し、PC全体のポリシーを変更しません。
 組織ポリシーで禁止されている場合は組織の許可された手順で実行します。
 スクリプトはCLI 1.5.1を確認し、不足している `arduino:avr@1.8.8` を導入します。
-指定版があれば再インストールせず、異版があれば変更前に停止します。
+`scripts/common.ps1` がリポジトリ位置から次の専用ディレクトリを毎回選択します。
 
-手動導入時のみ、新PCの空環境で実行するコマンド:
+| CLI設定 | リポジトリ内の保存先 |
+|---|---|
+| ARDUINO_DIRECTORIES_DATA | `.arduino-local/data`（コア・ツール・index） |
+| ARDUINO_DIRECTORIES_DOWNLOADS | `.arduino-local/downloads` |
+| ARDUINO_DIRECTORIES_USER | `.arduino-local/user`（ライブラリ） |
+
+グローバルのArduinoコア・ライブラリは保持します。専用環境に指定版があれば再インストールせず、
+専用環境内の異版は変更前に停止します。既存の異版を無断で削除・上書きしないでください。
+setup/verifyを別の作業ディレクトリから呼んでも、保存先は呼び出したリポジトリ内です。
+
+Arduino CLIを直接使う場合は、リポジトリルートの同じPowerShellで以下の3変数を先に設定します。
+VS Codeの新規ターミナルでは共有設定により設定されます。
+子PowerShellで実行したsetup/verifyの環境変数は、親PowerShellには戻りません。
 
 ```powershell
+$localArduinoRoot = Join-Path (Get-Location).Path '.arduino-local'
+$env:ARDUINO_DIRECTORIES_DATA = Join-Path $localArduinoRoot 'data'
+$env:ARDUINO_DIRECTORIES_DOWNLOADS = Join-Path $localArduinoRoot 'downloads'
+$env:ARDUINO_DIRECTORIES_USER = Join-Path $localArduinoRoot 'user'
+# 手動導入時のみ。通常はsetupに任せる
 arduino-cli core update-index
 arduino-cli core install arduino:avr@1.8.8
 ```
@@ -181,20 +209,9 @@ arduino-cli lib install --no-deps "Adafruit_VL53L0X@1.2.5"
 DFRobotDFPlayerMiniは現行ソースで未使用なので不要。Wire/SPIはコア付属。
 固定版の正本は [environment.lock.json](../scripts/environment.lock.json) です。
 
-異版コア／ライブラリによってsetupが停止した場合、既存環境を維持したまま専用ディレクトリへ分離できます。
-以下を**同じPowerShellセッションで**実行し、setupを再実行します。
-
-```powershell
-$localArduinoRoot = Join-Path (Get-Location).Path '.arduino-local'
-$env:ARDUINO_DIRECTORIES_DATA = Join-Path $localArduinoRoot 'data'
-$env:ARDUINO_DIRECTORIES_DOWNLOADS = Join-Path $localArduinoRoot 'downloads'
-$env:ARDUINO_DIRECTORIES_USER = Join-Path $localArduinoRoot 'user'
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1
-```
-
-設定は現在セッションのみで、子PowerShellへ継承されます。
-分離環境で後日verify/compile/uploadする際も、毎回この3変数を設定します。
-`.arduino-local/` はGit無視対象です。
+setup/verifyは環境変数の事前設定なしで専用環境を選びます。
+手動CLIのlib/compile/upload/monitorでは、手順8の3変数を同じセッションに設定してください。
+`.arduino-local/`、`.tools/`、build成果物はGit無視対象です。
 
 ## 10. Mega 2560向けcompileと検証
 
@@ -208,9 +225,11 @@ if ($LASTEXITCODE -ne 0) { throw 'Verification failed' }
 
 Git、CLI版、AVRコア版、ライブラリ版、`.ino` と `config.h` の存在、Mega compileを検証します。
 成功は `[PASS]` と終了コード0、失敗は `[FAIL]` と終了コード1。
-旧PCではFlash 34,146 bytes／静的RAM 1,488 bytes。ビルド成功は実機確認の完了を意味しません。
+このPCの構築時はFlash 34,146 bytes／静的RAM 1,488 bytes。ビルド成功は実機確認の完了を意味しません。
+このPCでは空の専用環境への導入と、既存環境を保持した再実行を確認しています。
+VS CodeのCtrl+Shift+Bも同じ正本のverifyを使用します。
 
-手順12のupload用には、決まった出力先へ改めてcompileします。
+手順12のupload用には、手順8の3変数を設定した同じシェルで、決まった出力先へ改めてcompileします。
 
 ```powershell
 arduino-cli compile --clean --fqbn arduino:avr:mega:cpu=atmega2560 --build-path .\build\mega2560 .\dorayaki_io_check
@@ -226,6 +245,7 @@ arduino-cli board list
 ```
 
 接続前後の差分やデバイスマネージャーで対象COM番号を照合します。
+このPCではCOM4へのupload成功がユーザー確認済みですが、次PCではその番号を流用せず照合します。
 出ない場合はケーブル、USB、デバイスマネージャーを確認。
 互換品のUSBチップ用ドライバが必要なら、現物のチップを確認してメーカー公式のものを手動導入します。
 実機未接続なら手順11以降は保留し、compileまでで環境構築完了です。
@@ -254,6 +274,10 @@ arduino-cli monitor --port $megaPort --config baudrate=115200
 定期ログには設定値、PT100抵抗・ADC・温度、ToF距離・status、SW状態が出ます。
 未接続や不正値はERR。終了はCtrl+C。
 実測結果をHANDOFFへ記録し、MD20A単体試験を別工程として準備します。
+
+現在の残件はOLED_INIT=ERR（I2C scanは0x29のみ）、START_SWのLOW固定、D9/D12端子電圧未実測です。
+PT100の固定抵抗は実物確認済みの1kΩ、コードは `PT100_SERIES_RESISTOR_OHM=1000.0F` です。
+修正版の実機温度比較・校正は未実施。詳細な実機記録は[HANDOFF](HANDOFF.md)を参照してください。
 
 ## 人間が行う作業
 

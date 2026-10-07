@@ -4,11 +4,12 @@ param([switch] $InstallExtensions)
 
 try {
     . (Join-Path $PSScriptRoot 'common.ps1')
+    Initialize-ArduinoEnvironment
     Assert-CliVersion
     Assert-Sources
 
     # Preflight ALL conflicts before installing anything. Do not replace another
-    # project's global core or libraries; the user can choose a separate CLI profile.
+    # project's global core or libraries, or a conflicting local package.
     $core = @(Get-InstalledCore)
     if ($core.Count -gt 0 -and $core[0].installed_version -ne $EnvironmentLock.core.version) {
         throw "Core conflict: $($EnvironmentLock.core.id) $($core[0].installed_version). Expected $($EnvironmentLock.core.version). No packages changed."

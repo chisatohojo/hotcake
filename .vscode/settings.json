@@ -1,0 +1,21 @@
+{
+  "files.associations": { "*.ino": "cpp" },
+  "terminal.integrated.env.windows": {
+    "ARDUINO_DIRECTORIES_DATA": "${workspaceFolder}/.arduino-local/data",
+    "ARDUINO_DIRECTORIES_DOWNLOADS": "${workspaceFolder}/.arduino-local/downloads",
+    "ARDUINO_DIRECTORIES_USER": "${workspaceFolder}/.arduino-local/user",
+    "PATH": "${env:LOCALAPPDATA}/ArduinoCLI/1.5.1;${env:PATH}"
+  },
+  "C_Cpp.default.compilerPath": "${workspaceFolder}/.arduino-local/data/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/avr-g++.exe",
+  "C_Cpp.default.compilerArgs": ["-mmcu=atmega2560"],
+  "C_Cpp.default.includePath": [
+    "${workspaceFolder}/dorayaki_io_check",
+    "${workspaceFolder}/.arduino-local/data/packages/arduino/hardware/avr/1.8.8/cores/arduino",
+    "${workspaceFolder}/.arduino-local/data/packages/arduino/hardware/avr/1.8.8/variants/mega",
+    "${workspaceFolder}/.arduino-local/data/packages/arduino/hardware/avr/1.8.8/libraries/**",
+    "${workspaceFolder}/.arduino-local/user/libraries/**"
+  ],
+  "C_Cpp.default.defines": ["ARDUINO=10607", "ARDUINO_AVR_MEGA2560", "ARDUINO_ARCH_AVR", "F_CPU=16000000L"],
+  "C_Cpp.default.cStandard": "gnu11",
+  "C_Cpp.default.cppStandard": "gnu++11"
+}

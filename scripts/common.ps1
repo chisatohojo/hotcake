@@ -4,6 +4,23 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $EnvironmentLock = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'environment.lock.json') -Raw | ConvertFrom-Json
 
+function Initialize-ArduinoEnvironment {
+    # Resolve from the repository, regardless of the caller's working directory.
+    # Both setup and verify always use this profile, leaving other projects alone.
+    $localArduinoRoot = Join-Path $RepoRoot '.arduino-local'
+    $env:ARDUINO_DIRECTORIES_DATA = Join-Path $localArduinoRoot 'data'
+    $env:ARDUINO_DIRECTORIES_DOWNLOADS = Join-Path $localArduinoRoot 'downloads'
+    $env:ARDUINO_DIRECTORIES_USER = Join-Path $localArduinoRoot 'user'
+
+    # Also support the user ZIP installation before the shell's PATH is refreshed.
+    $cliDirectory = Join-Path $env:LOCALAPPDATA "ArduinoCLI\$($EnvironmentLock.arduinoCli)"
+    if (Test-Path -LiteralPath (Join-Path $cliDirectory 'arduino-cli.exe') -PathType Leaf) {
+        $otherPaths = @($env:Path -split ';' | Where-Object { $_ -and $_ -ne $cliDirectory })
+        $env:Path = (@($cliDirectory) + $otherPaths) -join ';'
+    }
+    Write-Host "[PASS] Repository-local Arduino environment: $localArduinoRoot"
+}
+
 function Require-Command([string] $Name) {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
         throw "Missing command: $Name. See docs/NEW_PC_SETUP.md and reopen PowerShell after installation."
