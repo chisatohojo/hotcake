@@ -29,7 +29,6 @@ constexpr int8_t OLED_RESET_PIN = -1;
 constexpr unsigned long SENSOR_INTERVAL_MS = 100;
 constexpr unsigned long DISPLAY_INTERVAL_MS = 250;
 constexpr unsigned long SERIAL_INTERVAL_MS = 1000;
-constexpr unsigned long DISPLAY_PAGE_INTERVAL_MS = 2500;
 constexpr unsigned long SWITCH_DEBOUNCE_MS = 30;
 constexpr unsigned long START_BEEP_MS = 100;
 

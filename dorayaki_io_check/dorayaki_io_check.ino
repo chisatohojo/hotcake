@@ -47,8 +47,6 @@ unsigned long buzzerStopMs = 0;
 unsigned long lastSensorMs = 0;
 unsigned long lastDisplayMs = 0;
 unsigned long lastSerialMs = 0;
-unsigned long lastPageChangeMs = 0;
-uint8_t displayPage = 0;
 
 float mapAdcToFloat(float adc, float outputMin, float outputMax) {
   return outputMin + (adc / 1023.0F) * (outputMax - outputMin);
@@ -248,64 +246,53 @@ void printValueOrError(float value, bool valid, uint8_t decimals) {
   }
 }
 
-void drawPage0() {
-  display.setCursor(0, 0);
-  display.println(F("[SETTINGS]"));
-  display.print(F("Temp : "));
-  display.print(ioData.temperatureSetC, 1);
-  display.println(F(" C"));
-  display.print(F("Time : "));
-  display.print(ioData.pressTimeSetS, 1);
-  display.println(F(" sec"));
-  display.print(F("Height: "));
-  display.print(ioData.heightSetMm, 0);
-  display.println(F(" mm"));
-  display.print(F("Start: "));
-  display.println(ioData.startPressed ? F("LOW/PRESSED") : F("HIGH"));
-}
-
-void drawPage1() {
-  display.setCursor(0, 0);
-  display.println(F("[SENSORS]"));
-  display.print(F("PT100: "));
-  printValueOrError(ioData.temperatureActualC, ioData.pt100Valid, 1);
-  display.println(ioData.pt100Valid ? F(" C") : F(""));
-  display.print(F("R    : "));
-  printValueOrError(ioData.pt100ResistanceOhm, ioData.pt100Valid, 1);
-  display.println(ioData.pt100Valid ? F(" ohm") : F(""));
-  display.print(F("ToF  : "));
-  if (ioData.tofValid) {
-    display.print(ioData.tofDistanceMm);
-    display.println(F(" mm"));
-  } else {
-    display.println(F("ERR"));
-  }
-  display.print(F("Init O/T: "));
-  display.print(oledReady ? F("OK") : F("ER"));
-  display.print('/');
-  display.println(tofReady ? F("OK") : F("ER"));
-}
-
 void updateDisplay() {
   if (!oledReady) {
     return;
   }
 
-  const unsigned long now = millis();
-  if ((now - lastPageChangeMs) >= DISPLAY_PAGE_INTERVAL_MS) {
-    displayPage ^= 1U;
-    lastPageChangeMs = now;
-  }
-
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
+  display.setFont(nullptr);
   display.setTextSize(1);
+  display.setTextWrap(false);
 
-  if (displayPage == 0) {
-    drawPage0();
-  } else {
-    drawPage1();
+  // Standard font: 6x8 cells. Widest row is 16 characters (96 pixels).
+  // Six rows at y=0,10,...,50 end at y=57, within the 128x64 display.
+  display.setCursor(0, 0);
+  display.print(F("Tset "));
+  display.print(ioData.temperatureSetC, 0);
+  display.print(F("C  "));
+  display.print(ioData.pressTimeSetS, 1);
+  display.print('s');
+
+  display.setCursor(0, 10);
+  display.print(F("Hset  "));
+  display.print(ioData.heightSetMm, 0);
+  display.print(F("mm"));
+
+  display.setCursor(0, 20);
+  display.print(F("Temp "));
+  printValueOrError(ioData.temperatureActualC, ioData.pt100Valid, 1);
+  if (ioData.pt100Valid) {
+    display.print('C');
   }
+
+  display.setCursor(0, 30);
+  display.print(F("ToF  "));
+  if (ioData.tofValid) {
+    display.print(ioData.tofDistanceMm);
+    display.print(F("mm"));
+  } else {
+    display.print(F("ERR"));
+  }
+
+  display.setCursor(0, 40);
+  display.print(F("SW "));
+  display.print(ioData.startPressed ? F("LOW") : F("HIGH"));
+
+  display.setCursor(0, 50);
+  display.print(F("SSR OFF  PWM 0"));  // Matches the enforced Phase 1 invariant.
   display.display();
 }
 
@@ -384,7 +371,6 @@ void setup() {
   lastSensorMs = now;
   lastDisplayMs = now;
   lastSerialMs = now;
-  lastPageChangeMs = now;
 }
 
 void loop() {
