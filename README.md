@@ -11,6 +11,7 @@ COM4への1kΩ修正版uploadと起動ログを確認しました。前回のToF
 D9/D12の端子電圧実測とPT100の校正は未実施です。
 2026-10-14にOLEDの通常表示を6行の1画面へ変更し、COM4への書き込み・フラッシュ検証に成功しました。
 OLED初期化OKをログで確認しました。6行表示の目視確認は未実施です。
+ToFのOLED表示は単なるERRから、通信・初期化・測距条件別の診断ラベルへ変更しました。
 
 **現行I/O版ではSSRは絶対にLOW、モータPWMは絶対に0。** 起動時と毎回のloopで維持します。
 開始スイッチを押しても、ブザーのみが作動します。
@@ -55,7 +56,8 @@ SSR OFF  PWM 0
 ```
 
 文字の送り幅6ピクセル・高さ8ピクセルで、各行の開始座標を固定し、折り返しを無効にしています。
-有効値の最大桁数でも最長16文字＝96ピクセル幅、最下行の下端はY=57で、画面内に収まります。
+正常時は最長16文字＝96ピクセル幅、診断表示を含めても最長18文字＝108ピクセル幅です。
+最下行の下端はY=57で、画面内に収まります。
 
 | 行のY座標 | 最大桁数の表示例 | 文字数／幅 |
 |---|---|---|
@@ -63,11 +65,12 @@ SSR OFF  PWM 0
 | 10 | `Hset  300mm` | 11文字／66px |
 | 20 | `Temp 850.0C` | 11文字／66px |
 | 30 | `ToF  65535mm` | 12文字／72px |
+| 30（異常時） | `ToF  SENSOR ERR S5` | 18文字／108px |
 | 40 | `SW HIGH` | 7文字／42px |
 | 50 | `SSR OFF  PWM 0` | 14文字／84px |
 
 ToFの最大桁数は格納型 `uint16_t` の上限を使った表示幅の確認値で、センサの有効測距範囲を示しません。
-PT100・ToFが異常の場合は、それぞれ `Temp ERR`・`ToF  ERR` と表示し、前回の数値を表示しません。
+PT100が異常の場合は `Temp ERR`、ToFが異常の場合は下表の診断ラベルを表示し、前回の数値を表示しません。
 SWはデバウンス後のHIGH／LOWです。SSR OFF／PWM 0は現行I/O版の固定出力状態で、端子電圧の実測値ではありません。
 PT100抵抗・ADC・ToF status・初期化結果は従来どおりSerialで確認できます。
 Serialの内容・1秒周期、温度計算、設定範囲、ピン、安全処理は変更していません。
@@ -77,6 +80,35 @@ commit `647daec490491eaf9ba732d4306038257d48216b` の1画面表示版をMega 256
 uploadの `--verify` 付き実行が終了コード0となり、フラッシュ検証に成功しました。
 115200bpsで約12秒のSerialログを取得し、0x29/0x3Cの検出、OLED_INIT=OK、TOF_INIT=OK、SSR=OFF、MOTOR_PWM=0を確認。
 コード上のレイアウト確認と実機の初期化・ログ確認は完了し、OLEDの6行表示・重なり・更新の目視確認は未実施です。
+
+ToFの診断表示（`S`はRangeStatus、負の数は測距APIの戻り値）:
+
+| OLEDのToF行 | 意味・確認する条件 |
+|---|---|
+| `ToF  65mm` | API成功・status=0・距離が正の正常測距。 |
+| `ToF  NOT FOUND` | 起動時に0x29を検出できなかった。配線・電源・接続を確認。 |
+| `ToF  INIT ERR` | 0x29は検出したが、ToF初期化が失敗。 |
+| `ToF  I2C ERR -20` | 測距APIが通信インターフェースエラーを返した。 |
+| `ToF  TIMEOUT -7` | 測定処理が時間切れ。距離の近い／遠いを示すコードではない。 |
+| `ToF  READ ERR -6` | その他のAPIエラー。末尾の実際の戻り値で切り分ける。 |
+| `ToF  UNSTABLE S1` | 測定のノイズ・ばらつきが大きい（Sigma判定）。 |
+| `ToF  WEAK/FAR? S2` | 反射信号が弱い。遠い・対象なし・反射しにくい等の可能性があり、遠すぎるとは断定しない。 |
+| `ToF  NEAR? S3` | 最小範囲判定に失敗。近距離側の条件を確認する目安で、近すぎるとは断定しない。 |
+| `ToF  RANGE? S4` | 距離の確定に失敗（位相判定）。距離の曖昧さ・ノイズ等で発生し、遠すぎるとは断定しない。 |
+| `ToF  SENSOR ERR S5` | センサが内部ハードウェア異常を報告。 |
+| `ToF  NO DATA S255` | 測距データの更新なし。 |
+| `ToF  BAD DATA S0` / `ToF  UNKNOWN S...` | status=0でも距離が0、または未知のstatus。数値を有効扱いしない。 |
+
+`?` は原因の推定を表します。VL53L0Xのstatusだけでは近すぎる／遠すぎるを常に区別できません。
+仕様の根拠は[ST UM2039のRange Status表（16ページ）](https://www.st.com/resource/en/user_manual/um2039-world-smallest-timeofflight-ranging-and-gesture-detection-sensor-application-programming-interface-stmicroelectronics.pdf)と
+[使用ライブラリ1.2.5のエラー定義](https://github.com/adafruit/Adafruit_VL53L0X/blob/1.2.5/src/vl53l0x_def.h)です。
+測距APIの戻り値を確認し、API失敗時は測定構造体や前回値を使いません。
+Serialの既存フォーマット・1秒周期は維持し、詳細なAPIコードはOLEDへ表示します。
+API失敗時のSerialのTOF_STATUSは255（値未取得）となるため、OLEDの診断表示も併せて確認してください。
+距離の近い／遠いを決め打ちするしきい値や、測距設定・有効範囲は追加・変更していません。
+2026-10-14にこの診断版もclean compile成功（Flash 34,258 bytes／静的RAM 1,483 bytes）し、
+21:06（日本時間）にCOM4へ書き込み・フラッシュ検証成功。約12秒のログでOLED_INIT=OK、TOF_INIT=OK、
+TOF_STATUS=2、SSR=OFF、MOTOR_PWM=0を確認しました。通信エラーなど他の異常状態の実機再現試験は未実施です。
 
 ## ピンアサイン
 

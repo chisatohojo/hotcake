@@ -21,6 +21,7 @@ struct IoData {
 
   uint16_t tofDistanceMm = 0;
   uint8_t tofRangeStatus = 255;
+  VL53L0X_Error tofApiError = VL53L0X_ERROR_NONE;
   bool tofValid = false;
 
   bool startPressed = false;
@@ -203,15 +204,19 @@ void readPt100() {
 void readTof() {
   ioData.tofValid = false;
   ioData.tofRangeStatus = 255;
+  ioData.tofApiError = VL53L0X_ERROR_NONE;
   if (!tofReady) {
     return;
   }
 
-  VL53L0X_RangingMeasurementData_t measurement;
-  tof.rangingTest(&measurement, false);
+  VL53L0X_RangingMeasurementData_t measurement = {};
+  ioData.tofApiError = tof.rangingTest(&measurement, false);
+  if (ioData.tofApiError != VL53L0X_ERROR_NONE) {
+    return;  // Failed API calls must not expose stale or incomplete range data.
+  }
   ioData.tofRangeStatus = measurement.RangeStatus;
 
-  // Only status 0 is accepted as a valid range. All sensor error states show ERR.
+  // Only status 0 is accepted as a valid range; failures have diagnostic labels.
   if (measurement.RangeStatus == 0 && measurement.RangeMilliMeter > 0) {
     ioData.tofDistanceMm = measurement.RangeMilliMeter;
     ioData.tofValid = true;
@@ -246,6 +251,33 @@ void printValueOrError(float value, bool valid, uint8_t decimals) {
   }
 }
 
+const __FlashStringHelper* tofFailureLabel() {
+  if (!tofReady) {
+    return i2cAddressDetected[TOF_I2C_ADDRESS] ? F("INIT ERR") : F("NOT FOUND");
+  }
+  if (ioData.tofApiError == VL53L0X_ERROR_CONTROL_INTERFACE) {
+    return F("I2C ERR");
+  }
+  if (ioData.tofApiError == VL53L0X_ERROR_TIME_OUT) {
+    return F("TIMEOUT");
+  }
+  if (ioData.tofApiError != VL53L0X_ERROR_NONE) {
+    return F("READ ERR");
+  }
+
+  // ST range status describes measurement quality, not an exact near/far cause.
+  switch (ioData.tofRangeStatus) {
+    case 0: return F("BAD DATA");  // Status 0 with a zero distance is still invalid.
+    case 1: return F("UNSTABLE");  // Sigma check failed (measurement noise).
+    case 2: return F("WEAK/FAR?"); // Signal check failed; far is only one possibility.
+    case 3: return F("NEAR?");     // Minimum-range check failed.
+    case 4: return F("RANGE?");    // Phase check failed (ambiguity or noise).
+    case 5: return F("SENSOR ERR");
+    case 255: return F("NO DATA");
+    default: return F("UNKNOWN");
+  }
+}
+
 void updateDisplay() {
   if (!oledReady) {
     return;
@@ -257,7 +289,7 @@ void updateDisplay() {
   display.setTextSize(1);
   display.setTextWrap(false);
 
-  // Standard font: 6x8 cells. Widest row is 16 characters (96 pixels).
+  // Standard font: 6x8 cells. Widest diagnostic row is 18 characters (108 pixels).
   // Six rows at y=0,10,...,50 end at y=57, within the 128x64 display.
   display.setCursor(0, 0);
   display.print(F("Tset "));
@@ -284,7 +316,16 @@ void updateDisplay() {
     display.print(ioData.tofDistanceMm);
     display.print(F("mm"));
   } else {
-    display.print(F("ERR"));
+    display.print(tofFailureLabel());
+    if (tofReady) {
+      if (ioData.tofApiError != VL53L0X_ERROR_NONE) {
+        display.print(' ');
+        display.print(static_cast<int>(ioData.tofApiError));
+      } else {
+        display.print(F(" S"));
+        display.print(ioData.tofRangeStatus);
+      }
+    }
   }
 
   display.setCursor(0, 40);
