@@ -341,7 +341,7 @@ void setup() {
   digitalWrite(PIN_SSR, LOW);
   digitalWrite(PIN_BUZZER, BUZZER_OFF_LEVEL);
 
-  pinMode(PIN_START_SWITCH, INPUT);  // External pull-up; do not use INPUT_PULLUP.
+  pinMode(PIN_START_SWITCH, INPUT_PULLUP);  // Internal pull-up; NO switch connects D4 to GND.
   pinMode(PIN_BUZZER, OUTPUT);
   pinMode(PIN_MOTOR_DIR, OUTPUT);
   pinMode(PIN_MOTOR_PWM, OUTPUT);

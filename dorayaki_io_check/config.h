@@ -10,7 +10,7 @@ constexpr uint8_t PIN_POT_PRESS_TIME = A1;
 constexpr uint8_t PIN_POT_HEIGHT = A2;
 constexpr uint8_t PIN_PT100 = A7;
 
-constexpr uint8_t PIN_START_SWITCH = 4;  // External pull-up: released=HIGH, pressed=LOW
+constexpr uint8_t PIN_START_SWITCH = 4;  // Internal pull-up: released=HIGH, pressed=LOW
 constexpr uint8_t PIN_BUZZER = 5;
 constexpr uint8_t PIN_MOTOR_DIR = 8;
 constexpr uint8_t PIN_MOTOR_PWM = 9;
