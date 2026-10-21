@@ -62,10 +62,11 @@ bool timeReached(unsigned long now, unsigned long target) {
 }
 
 void enforceSafeOutputs() {
-  // Phase 1 invariant: motor and heater are never energized.
+  // Phase 1 output invariant: motor PWM=0 and both SSR control pins=LOW.
   digitalWrite(PIN_MOTOR_DIR, LOW);  // Direction is not yet defined; level is harmless at PWM=0.
   analogWrite(PIN_MOTOR_PWM, 0);
   digitalWrite(PIN_SSR, LOW);
+  digitalWrite(PIN_SSR_HOTPLATE, LOW);
 }
 
 void setBuzzerOutput(bool on) {
@@ -372,7 +373,7 @@ void updateSerial() {
 
   Serial.print(F(",START_SW="));
   Serial.print(ioData.startPressed ? F("LOW") : F("HIGH"));
-  Serial.println(F(",SSR=OFF,MOTOR_PWM=0"));
+  Serial.println(F(",SSR=OFF,MOTOR_PWM=0,HOTPLATE_SSR=OFF"));
 }
 
 void setup() {
@@ -380,6 +381,7 @@ void setup() {
   digitalWrite(PIN_MOTOR_DIR, LOW);
   digitalWrite(PIN_MOTOR_PWM, LOW);
   digitalWrite(PIN_SSR, LOW);
+  digitalWrite(PIN_SSR_HOTPLATE, LOW);
   digitalWrite(PIN_BUZZER, BUZZER_OFF_LEVEL);
 
   pinMode(PIN_START_SWITCH, INPUT_PULLUP);  // Internal pull-up; NO switch connects D4 to GND.
@@ -387,13 +389,14 @@ void setup() {
   pinMode(PIN_MOTOR_DIR, OUTPUT);
   pinMode(PIN_MOTOR_PWM, OUTPUT);
   pinMode(PIN_SSR, OUTPUT);
+  pinMode(PIN_SSR_HOTPLATE, OUTPUT);
   enforceSafeOutputs();
   setBuzzerOutput(false);
 
   Serial.begin(115200);
   Serial.println();
   Serial.println(F("DORAYAKI_IO_CHECK_START"));
-  Serial.println(F("SAFETY: SSR=OFF, MOTOR_PWM=0"));
+  Serial.println(F("SAFETY: SSR=OFF, MOTOR_PWM=0, HOTPLATE_SSR=OFF"));
 
   switchLastRawPressed = (digitalRead(PIN_START_SWITCH) == LOW);
   switchStablePressed = switchLastRawPressed;
