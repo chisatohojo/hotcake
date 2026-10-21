@@ -24,6 +24,16 @@ constexpr uint8_t OLED_WIDTH = 128;
 constexpr uint8_t OLED_HEIGHT = 64;
 constexpr int8_t OLED_RESET_PIN = -1;
 
+// Shared bus comparison: change only this value to 100000UL for the 100 kHz trial.
+constexpr uint32_t I2C_CLOCK_HZ = 400000UL;
+static_assert(I2C_CLOCK_HZ == 100000UL || I2C_CLOCK_HZ == 400000UL,
+              "Use 100 kHz or 400 kHz for the I2C comparison");
+
+// ST API data formats, not ranging/quality settings.
+constexpr float TOF_RATE_FIXED_SCALE = 65536.0F;  // Unsigned 16.16 -> MCPS
+constexpr float TOF_SPAD_FIXED_SCALE = 256.0F;    // Unsigned 8.8 -> effective SPADs
+constexpr uint8_t TOF_COMMAND_BYTES_PER_LOOP = 8;
+
 // -----------------------------------------------------------------------------
 // Timing
 // -----------------------------------------------------------------------------

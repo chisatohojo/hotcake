@@ -3,10 +3,13 @@
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_VL53L0X.h>
 #include <math.h>
+#include <string.h>
 
 #include "config.h"
 
-Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET_PIN);
+// SSD1306 otherwise restores 100 kHz after each transfer, including display().
+Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET_PIN,
+                        I2C_CLOCK_HZ, I2C_CLOCK_HZ);
 Adafruit_VL53L0X tof;
 
 struct IoData {
@@ -23,11 +26,29 @@ struct IoData {
   uint8_t tofRangeStatus = 255;
   VL53L0X_Error tofApiError = VL53L0X_ERROR_NONE;
   bool tofValid = false;
+  bool tofApiAttempted = false;
+  bool tofDiagnosticAvailable = false;
+  uint16_t tofRawDistanceMm = 0;
+  uint32_t tofSignalRateRaw = 0;
+  uint32_t tofAmbientRateRaw = 0;
+  uint16_t tofSpadCountRaw = 0;
 
   bool startPressed = false;
 };
 
 IoData ioData;
+
+struct TofStatistics {
+  uint32_t attempts;
+  uint32_t accepted;
+  uint32_t apiErrors;
+  uint32_t statusCounts[256];
+  unsigned long startedAtMs;
+};
+
+TofStatistics tofStatistics = {};
+uint32_t tofStatisticsWindow = 0;
+bool tofStatisticsResetRequested = false;
 
 bool oledReady = false;
 bool tofReady = false;
@@ -111,11 +132,11 @@ void scanI2cBus() {
 
 void initializeI2cDevices() {
   Wire.begin();
-  Wire.setClock(400000UL);
+  Wire.setClock(I2C_CLOCK_HZ);
   scanI2cBus();
 
   oledReady = i2cAddressDetected[OLED_I2C_ADDRESS] &&
-              display.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDRESS);
+              display.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDRESS, true, false);
   Serial.print(F("OLED_INIT="));
   Serial.println(oledReady ? F("OK") : F("ERR"));
 
@@ -130,6 +151,11 @@ void initializeI2cDevices() {
   }
 
   tofReady = i2cAddressDetected[TOF_I2C_ADDRESS] && tof.begin();
+  // VL53L0X begin() calls Wire.begin(), resetting the AVR bus to 100 kHz.
+  // Restore the comparison clock after either successful or failed initialization.
+  Wire.setClock(I2C_CLOCK_HZ);
+  Serial.print(F("I2C_CLOCK_HZ="));
+  Serial.println(I2C_CLOCK_HZ);
   Serial.print(F("TOF_INIT="));
   Serial.println(tofReady ? F("OK") : F("ERR"));
 
@@ -202,25 +228,65 @@ void readPt100() {
   ioData.pt100Valid = true;
 }
 
+void resetTofStatistics() {
+  memset(&tofStatistics, 0, sizeof(tofStatistics));
+  tofStatistics.startedAtMs = millis();
+  ++tofStatisticsWindow;
+  Serial.print(F("TOF_STATS_RESET="));
+  Serial.println(tofStatisticsWindow);
+}
+
+void readTofDiagnosticCommands() {
+  // A bounded amount of input per loop; commands never control any output pin.
+  for (uint8_t count = 0; count < TOF_COMMAND_BYTES_PER_LOOP && Serial.available() > 0;
+       ++count) {
+    const int command = Serial.read();
+    if (command == 'r' || command == 'R') {
+      tofStatisticsResetRequested = true;
+    }
+  }
+}
+
 void readTof() {
+  // Reset immediately before the next sample so a new window cannot log old data.
+  if (tofStatisticsResetRequested) {
+    resetTofStatistics();
+    tofStatisticsResetRequested = false;
+  }
   ioData.tofValid = false;
   ioData.tofRangeStatus = 255;
   ioData.tofApiError = VL53L0X_ERROR_NONE;
+  ioData.tofApiAttempted = false;
+  ioData.tofDiagnosticAvailable = false;
+  ioData.tofRawDistanceMm = 0;
+  ioData.tofSignalRateRaw = 0;
+  ioData.tofAmbientRateRaw = 0;
+  ioData.tofSpadCountRaw = 0;
   if (!tofReady) {
     return;
   }
 
   VL53L0X_RangingMeasurementData_t measurement = {};
+  ioData.tofApiAttempted = true;
+  ++tofStatistics.attempts;
   ioData.tofApiError = tof.rangingTest(&measurement, false);
   if (ioData.tofApiError != VL53L0X_ERROR_NONE) {
+    ++tofStatistics.apiErrors;
     return;  // Failed API calls must not expose stale or incomplete range data.
   }
   ioData.tofRangeStatus = measurement.RangeStatus;
+  ioData.tofDiagnosticAvailable = true;
+  ioData.tofRawDistanceMm = measurement.RangeMilliMeter;
+  ioData.tofSignalRateRaw = measurement.SignalRateRtnMegaCps;
+  ioData.tofAmbientRateRaw = measurement.AmbientRateRtnMegaCps;
+  ioData.tofSpadCountRaw = measurement.EffectiveSpadRtnCount;
+  ++tofStatistics.statusCounts[measurement.RangeStatus];
 
   // Only status 0 is accepted as a valid range; failures have diagnostic labels.
   if (measurement.RangeStatus == 0 && measurement.RangeMilliMeter > 0) {
     ioData.tofDistanceMm = measurement.RangeMilliMeter;
     ioData.tofValid = true;
+    ++tofStatistics.accepted;
   }
 }
 
@@ -338,6 +404,78 @@ void updateDisplay() {
   display.display();
 }
 
+void printTofDiagnostics() {
+  Serial.print(F(",I2C_CLOCK_HZ="));
+  Serial.print(I2C_CLOCK_HZ);
+  Serial.print(F(",TOF_DIAG="));
+  if (!tofReady) {
+    Serial.print(i2cAddressDetected[TOF_I2C_ADDRESS] ? F("INIT_ERR") : F("NOT_FOUND"));
+  } else if (!ioData.tofApiAttempted) {
+    Serial.print(F("NO_SAMPLE"));
+  } else {
+    Serial.print(ioData.tofDiagnosticAvailable ? F("AVAILABLE") : F("API_ERR"));
+  }
+  Serial.print(F(",TOF_API="));
+  if (ioData.tofApiAttempted) {
+    Serial.print(static_cast<int>(ioData.tofApiError));
+  } else {
+    Serial.print(F("NOT_RUN"));
+  }
+  Serial.print(F(",TOF_VALID="));
+  Serial.print(ioData.tofValid ? 1 : 0);
+  if (ioData.tofDiagnosticAvailable) {
+    // Raw distance on a rejected range is diagnostic only, never a valid position.
+    Serial.print(F(",TOF_DIST="));
+    Serial.print(ioData.tofRawDistanceMm);
+    Serial.print(F("mm,TOF_SIGNAL_MCPS="));
+    Serial.print(static_cast<float>(ioData.tofSignalRateRaw) / TOF_RATE_FIXED_SCALE, 6);
+    Serial.print(F(",TOF_AMBIENT_MCPS="));
+    Serial.print(static_cast<float>(ioData.tofAmbientRateRaw) / TOF_RATE_FIXED_SCALE, 6);
+    Serial.print(F(",TOF_SPAD="));
+    Serial.print(static_cast<float>(ioData.tofSpadCountRaw) / TOF_SPAD_FIXED_SCALE, 4);
+    // Keep exact integers as well, avoiding loss from AVR float/decimal rounding.
+    Serial.print(F(",TOF_SIGNAL_RAW="));
+    Serial.print(ioData.tofSignalRateRaw);
+    Serial.print(F(",TOF_AMBIENT_RAW="));
+    Serial.print(ioData.tofAmbientRateRaw);
+    Serial.print(F(",TOF_SPAD_RAW="));
+    Serial.print(ioData.tofSpadCountRaw);
+  } else {
+    Serial.print(F(",TOF_DIST=NA,TOF_SIGNAL_MCPS=NA,TOF_AMBIENT_MCPS=NA,TOF_SPAD=NA"));
+    Serial.print(F(",TOF_SIGNAL_RAW=NA,TOF_AMBIENT_RAW=NA,TOF_SPAD_RAW=NA"));
+  }
+
+  Serial.print(F(",TOF_WINDOW="));
+  Serial.print(tofStatisticsWindow);
+  Serial.print(F(",TOF_WINDOW_MS="));
+  Serial.print(millis() - tofStatistics.startedAtMs);
+  Serial.print(F(",TOF_N="));
+  Serial.print(tofStatistics.attempts);
+  Serial.print(F(",TOF_OK="));
+  Serial.print(tofStatistics.accepted);
+  Serial.print(F(",TOF_API_ERRS="));
+  Serial.print(tofStatistics.apiErrors);
+  Serial.print(F(",TOF_BAD_RANGE="));
+  Serial.print(tofStatistics.attempts - tofStatistics.accepted - tofStatistics.apiErrors);
+  Serial.print(F(",TOF_STATUS_COUNTS="));
+  bool firstStatus = true;
+  for (uint16_t status = 0; status < 256; ++status) {
+    if (tofStatistics.statusCounts[status] == 0) {
+      continue;
+    }
+    if (!firstStatus) {
+      Serial.print('|');
+    }
+    Serial.print(status);
+    Serial.print(':');
+    Serial.print(tofStatistics.statusCounts[status]);
+    firstStatus = false;
+  }
+  if (firstStatus) {
+    Serial.print(F("NONE"));
+  }
+}
+
 void updateSerial() {
   Serial.print(F("TEMP_SET="));
   Serial.print(ioData.temperatureSetC, 1);
@@ -373,7 +511,9 @@ void updateSerial() {
 
   Serial.print(F(",START_SW="));
   Serial.print(ioData.startPressed ? F("LOW") : F("HIGH"));
-  Serial.println(F(",SSR=OFF,MOTOR_PWM=0,HOTPLATE_SSR=OFF"));
+  Serial.print(F(",SSR=OFF,MOTOR_PWM=0,HOTPLATE_SSR=OFF"));
+  printTofDiagnostics();
+  Serial.println();
 }
 
 void setup() {
@@ -407,6 +547,7 @@ void setup() {
 
   readAnalogInputs();
   readPt100();
+  resetTofStatistics();
   readTof();
   updateDisplay();
   updateSerial();
@@ -424,6 +565,7 @@ void loop() {
   enforceSafeOutputs();
   readStartSwitch();
   updateBuzzer();
+  readTofDiagnosticCommands();
 
   if ((now - lastSensorMs) >= SENSOR_INTERVAL_MS) {
     lastSensorMs = now;
