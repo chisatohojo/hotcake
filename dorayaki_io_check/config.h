@@ -37,8 +37,8 @@ constexpr float TOF_LIMIT_FIXED_SCALE = 65536.0F;  // Unsigned 16.16 limits -> s
 // Actuator cycle stays disabled until DIR, distance direction, travel and lower
 // limit have all been checked on the actual mechanism. No jog/test mode here.
 constexpr bool ACTUATOR_SETUP_CONFIRMED = false;
-constexpr uint8_t MOTOR_PWM_RUN = 128;  // 8-bit PWM: approximately 50 percent
-constexpr uint8_t MOTOR_DIR_UP_LEVEL = HIGH;  // Provisional, NOT verified
+constexpr uint8_t MOTOR_PWM_RUN = 255;  // Duty 100 percent
+constexpr uint8_t MOTOR_DIR_UP_LEVEL = HIGH;  // Confirmed: HIGH=up, LOW=down
 constexpr uint8_t MOTOR_DIR_DOWN_LEVEL = MOTOR_DIR_UP_LEVEL == HIGH ? LOW : HIGH;
 constexpr uint16_t ACTUATOR_UPPER_MM = 300;
 constexpr uint16_t ACTUATOR_LOWER_MIN_MM = 50;  // Provisional; adjust to actual limits
