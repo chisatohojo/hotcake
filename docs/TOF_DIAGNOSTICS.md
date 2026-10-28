@@ -2,10 +2,129 @@
 
 第1段階I/O確認版に追加したSerial診断です。D2/D12=LOW、D9のPWM=0を維持します。
 測距の成功条件は従来どおり `RangeStatus == 0 && RangeMilliMeter > 0` です。
-品質チェック、タイミングバジェット、VCSEL設定、補償・校正値は変更していません。
-診断400kHz版はユーザーの指示後、2026-10-21に実機upload・フラッシュ検証成功、2026-10-28に起動ログを確認しました（[記録](HANDOFF.md#tof診断400khz版の書き込みと起動確認)）。距離・速度比較と負荷通電試験は未実施です。100kHz版など追加の書き込みは別途の指示後に行います。
+既定はAdafruit DEFAULTのRIT有効です。RIT無効は比較診断専用で、Signal/Sigmaの品質チェック、タイミングバジェット、VCSEL、補償・校正値は変更しません。
+診断400kHz版はユーザーの指示後、2026-10-21に実機upload・フラッシュ検証成功、2026-10-28に起動ログを確認しました（[記録](HANDOFF.md#tof診断400khz版の書き込みと起動確認)）。距離・速度比較と負荷通電試験は未実施です。RIT比較機能の追加版は実機未書き込み・未測定です。追加の書き込みは別途の指示後に行います。
 
-## 100kHz / 400kHz の切り替え
+## 距離の訂正と今回の比較対象（2026-10-28）
+
+以前の「40mm程度しか測距できない」は目測で、光学窓から定規等で測定した距離ではありません。
+40mmを測定限界とは扱わず、正常判定が約90mmを示したことも距離誤差とは断定しません。
+過去の50/80mm等の申告にも、光学窓基準の実距離・姿勢・照明の記録がなく、限界や精度の根拠には使用しません。
+確実な観測は、初期化・測距API成功（TOF_API=0）の下でS2が多数発生し、S0も一部あるが有効距離が安定しないことです。
+
+今回は**400kHz固定でRIT有効／無効のみ**を比較します。後述の100kHz/400kHz比較は別試験とし、混ぜません。
+RITを無効にしてS0が増えても、距離の正確性や再現性が保証されたとは判断しません。
+RIT無効モードを将来の自動位置制御に採用しないでください。
+
+## RITの切り替えと起動時の設定確認
+
+`dorayaki_io_check/config.h` の定数を変更して、条件ごとに正本のverifyでクリーンcompileします。
+
+```cpp
+constexpr uint32_t I2C_CLOCK_HZ = 400000UL;  // RIT比較中は固定
+constexpr bool TOF_RIT_ENABLED = true;    // 既定: RIT有効
+// RIT無効の比較時だけfalseにする。比較後はtrueへ戻す。
+```
+
+初期化プロファイルは従来のDEFAULTのままです。`tof.begin()` が成功した後にのみ、
+公開API `setLimitCheckEnable(VL53L0X_CHECKENABLE_RANGE_IGNORE_THRESHOLD, 0または1)` を1回呼びます。
+RITしきい値自体は変更しません。loop中やSerialの `r` では設定を切り替えません。
+
+公開ラッパーのsetterはbool（true=成功）を返し、STのエラーコードは公開メンバー `tof.Status` に入ります。
+getterの返値は設定値でありエラーコードではありません。各呼び出し直後にStatusを保存し、次のAPIによる上書きから保護します。
+エラー時は該当値・RAWを `NA` とし、その項目のAPIエラーを符号付き数値で出します。他の設定の取得は続行します。
+ラッパーは失敗時の返値を保証しないため、成功が確認できた値だけを換算・表示します。
+未検出・初期化失敗では設定APIを一切呼ばず、`TOF_SETTINGS=NOT_RUN,REASON=NOT_FOUND/INIT_ERR` とします。
+
+起動ログ:
+
+| 項目 | 内容 |
+|---|---|
+| `TOF_PROFILE_REQUEST=DEFAULT` | 初期化に要求したプロファイル。成功は従来のTOF_INITで確認。 |
+| `TOF_RIT_REQUEST=1/0` | ソース上の要求値。実設定の確認とは区別する。 |
+| `TOF_RIT_SET=OK/ERROR` | setterのboolとStatusの両方で判定。`TOF_RIT_SET_RETURN` と `TOF_RIT_SET_API` を併記。未初期化はNOT_RUN。 |
+| `TOF_SETTING=RIT` | RIT有効状態 `ENABLE` と `ENABLE_API`、しきい値 `VALUE`・`RAW` と `VALUE_API`。単位MCPS/SPAD。 |
+| `TOF_SETTING=SIGNAL_RATE_FINAL_RANGE` | Signal Rate Limitの有効状態・値・各API結果。単位MCPS。 |
+| `TOF_SETTING=SIGMA_FINAL_RANGE` | Sigma Limitの有効状態・値・各API結果。単位mm。 |
+| `TOF_SETTING=TIMING_BUDGET` | Measurement Timing Budgetの整数VALUE、API結果。単位us（マイクロ秒）。 |
+| `TOF_SETTING=PRE_RANGE_VCSEL` / `FINAL_RANGE_VCSEL` | VCSEL Pulse Periodの整数VALUE、API結果。単位PCLK（クロック周期数）、usやHzではない。 |
+| `TOF_RIT_MATCH=YES/NO/UNKNOWN` | 要求と有効状態読み戻しの一致。不一致・取得不能を成功扱いしない。 |
+| `TOF_SETTINGS=OK/ERROR/NOT_RUN` | setter成功、すべての読み出し成功、RIT要求一致でのみOK。設定確認の成否であり、測距品質や距離精度の保証ではない。 |
+
+しきい値はすべて符号なし16.16（FixPoint1616_t）で、`VALUE = RAW / 65536.0`、小数6桁で表示します。
+RITはMCPS/SPAD、Signal Rate LimitはMCPS、Sigma Limitはmmです。RAWも残すので表示丸めを避けて再計算できます。
+有効状態は0/1、Timing BudgetとVCSELは固定小数点ではありません。
+
+RITとSigmaの有効状態・値は同梱ST APIのPAL内部設定の読み戻しです。独立したハードウェアレジスタ検証とは扱いません。
+Signalの値はST APIがレジスタから読んで有効状態のキャッシュを同期するため、値→有効状態の順で読みます。
+Timing BudgetはST APIが現在のシーケンス・タイムアウトから取得し、VCSELはレジスタ値をPCLKへ復号します。
+RIT以外のsetterやプロファイル再設定は呼びません。
+
+1秒周期の既存診断行の末尾には `TOF_RIT_REQUEST`、`TOF_RIT_ENABLE`、`TOF_SETTINGS` を追加します。
+ここでのENABLEとSETTINGSは**起動時の確認結果を保持した値**で、測定ごとの再読み出しではありません。
+設定に失敗しても測距診断は継続しますが、ERROR/NOT_RUNを有効な比較条件として採用しないでください。
+既存のTOF_DIST/STATUS/API、信号・周囲光・SPAD、RAW、全試行の集計・分布、`r` リセット、OLED表示は維持します。
+
+## 同梱ST APIでのRIT判定とS2
+
+Adafruit 1.2.5のDEFAULTはRITを有効にし、値を `(FixPoint1616_t)(1.5 * 0.023 * 65536)` に設定します。
+これはST UM2039の一般的な既定表（RIT無効）とは異なるため、比較には実際の起動読み戻し値を使います。
+
+`VL53L0X_get_pal_range_status()` では、RIT有効かつ処理が成功しているとき、次を計算します。
+
+```text
+SPAD_RAW == 0: SignalRatePerSpad_RAW = 0
+それ以外:     SignalRatePerSpad_RAW = (256 * SignalRate_RAW) / SPAD_RAW
+RIT失敗:      RIT_RAW > 0 かつ SignalRatePerSpad_RAW < RIT_RAW
+```
+
+SignalRate_RAWは16.16、SPAD_RAWは8.8なので、計算結果も16.16のMCPS/SPADです。
+ST実装は整数演算・除算の切り捨てを使います。丸め済みのSerial表示値の単純除算と同一視しません。
+入力SignalRateは `VL53L0X_GetRangingMeasurementData()` で結果レジスタの9.7値を16.16へ変換したものです。
+この版では測定構造体にもその値が格納されますが、RIT判定だけで最終RangeStatusが決まるわけではありません。
+
+最終statusは優先順に、未更新、ハードウェア異常、位相異常、最小範囲異常を判定した後、
+センサ内部の `DeviceRangeStatusInternal == 4` **または**RIT失敗フラグでS2になります。その後にSigma失敗がS1となります。
+したがってS2だけではRITとSignal Limit由来を区別できず、RIT無効化後もS2や別の品質不良は残り得ます。
+Signal/SPADとの相関だけでRITを原因と断定せず、設定確認、比較結果、実距離との誤差、再現性を合わせて評価します。
+
+根拠: [Adafruit 1.2.5の公開APIとStatus](https://github.com/adafruit/Adafruit_VL53L0X/blob/1.2.5/src/Adafruit_VL53L0X.h)、
+[DEFAULT・設定ラッパー](https://github.com/adafruit/Adafruit_VL53L0X/blob/1.2.5/src/Adafruit_VL53L0X.cpp)、
+[STのRIT計算・status優先順](https://github.com/adafruit/Adafruit_VL53L0X/blob/1.2.5/src/core/src/vl53l0x_api_core.cpp)、
+[STの設定読み戻し・測定データ取得](https://github.com/adafruit/Adafruit_VL53L0X/blob/1.2.5/src/core/src/vl53l0x_api.cpp)、
+[ST UM2039 §6.2・表2の単位と既定設定](https://www.st.com/resource/en/user_manual/um2039-world-smallest-timeofflight-ranging-and-gesture-detection-sensor-application-programming-interface-stmicroelectronics.pdf)。
+
+## 400kHz固定でのRIT比較計画
+
+今回は計画・compileまでとし、upload・実機測定・負荷通電は行っていません。実施は別途の指示後です。
+
+1. I2C_CLOCK_HZ=400000UL、TOF_RIT_ENABLED=trueをクリーンcompileし、許可された書き込み後に起動ログを保存する。
+   TOF_INIT=OK、全項目のAPI=0、TOF_SETTINGS=OK、RIT_REQUEST=1、RITのENABLE=1とMATCH=YESを確認する。
+2. 白いA4コピー用紙で視野を覆い、センサ正面に平行に保持する。光学窓から紙面までの距離を定規等で測り、測り方と不確かさを記録する。
+   紙・照明・周囲物・配線・USB電源・ジグ・OLED・初期化時の窓状態を揃える。変更はRITだけとする。
+3. 50mmで安定後に `r` を送り、TOF_STATS_RESET応答を含むログを保存する。最低100試行（TOF_N>=100）、かつ最低30秒を目安に記録する。
+   最後の完全な同一区間のN/OK/API_ERRS/BAD_RANGE/status分布を採用し、累積値を行ごとに足さない。
+   信号・周囲光・SPAD・RAWと、TOF_VALID=1の距離を複数ログ残す。1秒値は最新1回のスナップショットで、全100試行の距離分布ではない。
+4. 100、150、300mmも同様に、実距離を測って記録し、移動後ごとに `r` で区間を分ける。
+5. I2Cを400kHzのままTOF_RIT_ENABLEDのみfalseへ変更してクリーンcompileする。許可された書き込み後、
+   起動ログでRIT_REQUEST=0、ENABLE=0、MATCH=YES、TOF_SETTINGS=OKを確認する。
+   Signal/SigmaのENABLE・RAW値、RITのRAW値、Timing Budget、VCSELが有効版と同じであることも確認し、同じ4距離で繰り返す。
+6. 比較後はTOF_RIT_ENABLED=trueへ戻す。必要なら有効→無効→有効の順で同条件を再測定して再現性を評価する。
+
+| 光学窓からの実距離 | RIT有効（400kHz） | RIT無効（400kHz） |
+|---|---|---|
+| 50mm | 未実施 | 未実施 |
+| 100mm | 未実施 | 未実施 |
+| 150mm | 未実施 | 未実施 |
+| 300mm | 未実施 | 未実施 |
+
+各セルに日時・commit・起動設定ログ・集計区間ID・時間・N・OK・成功率 `100*OK/N`・API_ERRS・BAD_RANGE・
+status分布と、複数のSignal/Ambient/SPAD/RAW・正常距離を保存します。N=0なら成功率は算出不能です。
+基準実距離との差（符号付き誤差）、正常距離のばらつき・外れ値、同条件の再試行も別途記録します。
+S2減少やS0増加はRIT関与の手がかりですが、精度・安定性が改善したという結論には実距離との照合と再現が必要です。
+安全出力は両条件ともD2/D12=LOW、D9のPWM=0のままです。
+
+## 別試験: 100kHz / 400kHz の切り替え
 
 `dorayaki_io_check/config.h` の1か所だけを変更します。既定値は400kHzです。
 
@@ -92,7 +211,7 @@ Serialへ `r` または `R` を送ると、次の通常測距の直前に集計�
 TOF=ERR,TOF_STATUS=2,...,I2C_CLOCK_HZ=400000,TOF_DIAG=AVAILABLE,TOF_API=0,TOF_VALID=0,TOF_DIST=150mm,TOF_SIGNAL_MCPS=0.199997,TOF_AMBIENT_MCPS=0.009995,TOF_SPAD=15.0000,TOF_SIGNAL_RAW=13107,TOF_AMBIENT_RAW=655,TOF_SPAD_RAW=3840,TOF_WINDOW=2,TOF_WINDOW_MS=10000,TOF_N=100,TOF_OK=80,TOF_API_ERRS=1,TOF_BAD_RANGE=19,TOF_STATUS_COUNTS=0:80|2:19
 ```
 
-## 白いA4コピー用紙による比較
+## 別試験: I2C速度だけの白いA4コピー用紙による比較
 
 書き込み・測定は別途の指示後に実施します。最初はモータ・ヒーター・両SSRの負荷電源を切り離し、USBのみとし、端子状態も別途確認します。
 
@@ -128,7 +247,7 @@ TOF=ERR,TOF_STATUS=2,...,I2C_CLOCK_HZ=400000,TOF_DIAG=AVAILABLE,TOF_API=0,TOF_VA
 
 ## 結果の読み方と次の切り分け
 
-以下は候補で、今回の実装だけでは原因は特定していません。400/100kHzの比較完了後、1項目ずつ別試験として変更します。
+以下は候補で、今回の実装だけでは原因は特定していません。現在は400kHz固定のRIT比較を優先し、I2C速度やその他の候補は混ぜずに1項目ずつ別試験とします。
 
 - 400kHzでAPI通信エラーが増え100kHzで減る場合は、配線・GND・プルアップ・SCL/SDA波形・バス容量を確認する。
   -20は通信エラーです。-7はタイムアウトで、通信速度だけを原因と断定しない。アイドル3.3Vだけでは波形品質は分からない。
@@ -140,7 +259,7 @@ TOF=ERR,TOF_STATUS=2,...,I2C_CLOCK_HZ=400000,TOF_DIAG=AVAILABLE,TOF_API=0,TOF_VA
 - 電源: 約4.78VというDC測定値だけでは測距時の降下・リップルは分からない。ユニット側とGNDを基準に波形を測り、
   コネクタ・ケーブル・レギュレータ・デカップリングを採用品の仕様に沿って確認する。ユニット入力と裸のVL53L0Xの電源仕様を混同しない。
 - 測距設定: 実際のタイミングバジェット、signal/sigma/RITの有効状態と値、VCSEL、校正・クロストーク補償を固定版の実装と照合する。
-  AdafruitのDEFAULTはRITを有効化するため、STの表の一般的な既定値と同一と決めつけない。S2を消すために品質判定を無効化しない。
+  AdafruitのDEFAULTはRITを有効化するため、STの表の一般的な既定値と同一と決めつけない。本資料のRITのみの診断比較を除き、品質判定を無効化しない。RIT無効を自動位置制御へ採用しない。
 - 共用バス: 電源を切ったうえでOLEDを外す比較は、速度比較とは別試験にする。OLED・プルアップ・配線の影響を一つずつ確認する。
 - 個体差: 同じ紙・照明・配線・設定で既知良品と交換比較する。型番・外観・購入ロット・窓状態も記録し、差だけで故障原因を確定しない。
 

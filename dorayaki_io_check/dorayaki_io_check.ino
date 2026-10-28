@@ -52,6 +52,10 @@ bool tofStatisticsResetRequested = false;
 
 bool oledReady = false;
 bool tofReady = false;
+bool tofSettingsChecked = false;
+bool tofSettingsVerified = false;
+bool tofRitReadbackAvailable = false;
+uint8_t tofRitReadback = 0;
 bool analogFilterInitialized = false;
 bool i2cAddressDetected[128] = {};
 
@@ -130,6 +134,120 @@ void scanI2cBus() {
   Serial.println(F("I2C_SCAN_END"));
 }
 
+bool logTofLimitSetting(uint16_t limitId, const __FlashStringHelper* name,
+                        const __FlashStringHelper* unit) {
+  // Read value first: the ST signal-limit getter synchronizes its enable cache.
+  const FixPoint1616_t value = tof.getLimitCheckValue(limitId);
+  const VL53L0X_Error valueApi = tof.Status;
+  const uint8_t enabled = tof.getLimitCheckEnable(limitId);
+  const VL53L0X_Error enableApi = tof.Status;
+
+  Serial.print(F("TOF_SETTING="));
+  Serial.print(name);
+  Serial.print(F(",ENABLE="));
+  if (enableApi == VL53L0X_ERROR_NONE) {
+    Serial.print(enabled);
+  } else {
+    Serial.print(F("NA"));
+  }
+  Serial.print(F(",ENABLE_API="));
+  Serial.print(static_cast<int>(enableApi));
+  Serial.print(F(",VALUE="));
+  if (valueApi == VL53L0X_ERROR_NONE) {
+    Serial.print(static_cast<float>(value) / TOF_LIMIT_FIXED_SCALE, 6);
+    Serial.print(F(",RAW="));
+    Serial.print(value);
+  } else {
+    // Wrappers do not promise a usable return value on failure.
+    Serial.print(F("NA,RAW=NA"));
+  }
+  Serial.print(F(",VALUE_API="));
+  Serial.print(static_cast<int>(valueApi));
+  Serial.print(F(",UNIT="));
+  Serial.println(unit);
+
+  if (limitId == VL53L0X_CHECKENABLE_RANGE_IGNORE_THRESHOLD) {
+    tofRitReadbackAvailable = (enableApi == VL53L0X_ERROR_NONE);
+    if (tofRitReadbackAvailable) {
+      tofRitReadback = enabled;
+    }
+  }
+  return valueApi == VL53L0X_ERROR_NONE && enableApi == VL53L0X_ERROR_NONE;
+}
+
+bool logTofIntegerSetting(const __FlashStringHelper* name, uint32_t value,
+                          VL53L0X_Error api, const __FlashStringHelper* unit) {
+  Serial.print(F("TOF_SETTING="));
+  Serial.print(name);
+  Serial.print(F(",VALUE="));
+  if (api == VL53L0X_ERROR_NONE) {
+    Serial.print(value);
+  } else {
+    Serial.print(F("NA"));
+  }
+  Serial.print(F(",API="));
+  Serial.print(static_cast<int>(api));
+  Serial.print(F(",UNIT="));
+  Serial.println(unit);
+  return api == VL53L0X_ERROR_NONE;
+}
+
+void configureAndLogTofSettings() {
+  Serial.println(F("TOF_PROFILE_REQUEST=DEFAULT"));
+  Serial.print(F("TOF_RIT_REQUEST="));
+  Serial.println(TOF_RIT_ENABLED ? 1 : 0);
+  if (!tofReady) {
+    Serial.println(F("TOF_RIT_SET=NOT_RUN,TOF_RIT_SET_API=NOT_RUN"));
+    Serial.print(F("TOF_SETTINGS=NOT_RUN,REASON="));
+    Serial.println(i2cAddressDetected[TOF_I2C_ADDRESS] ? F("INIT_ERR") : F("NOT_FOUND"));
+    return;  // No settings APIs before a successful begin().
+  }
+
+  tofSettingsChecked = true;
+  // The only setting changed after DEFAULT initialization is the RIT enable bit.
+  const bool setOk = tof.setLimitCheckEnable(
+      VL53L0X_CHECKENABLE_RANGE_IGNORE_THRESHOLD, TOF_RIT_ENABLED ? 1 : 0);
+  const VL53L0X_Error setApi = tof.Status;  // Capture before any other API call.
+  bool allOk = setOk && setApi == VL53L0X_ERROR_NONE;
+  Serial.print(F("TOF_RIT_SET="));
+  Serial.print(allOk ? F("OK") : F("ERROR"));
+  Serial.print(F(",TOF_RIT_SET_RETURN="));
+  Serial.print(setOk ? 1 : 0);  // Wrapper returns boolean, not VL53L0X_Error.
+  Serial.print(F(",TOF_RIT_SET_API="));
+  Serial.println(static_cast<int>(setApi));
+
+  // Evaluate every read even if a preceding setting/read failed.
+  allOk &= logTofLimitSetting(VL53L0X_CHECKENABLE_RANGE_IGNORE_THRESHOLD,
+                             F("RIT"), F("MCPS/SPAD"));
+  allOk &= logTofLimitSetting(VL53L0X_CHECKENABLE_SIGNAL_RATE_FINAL_RANGE,
+                             F("SIGNAL_RATE_FINAL_RANGE"), F("MCPS"));
+  allOk &= logTofLimitSetting(VL53L0X_CHECKENABLE_SIGMA_FINAL_RANGE,
+                             F("SIGMA_FINAL_RANGE"), F("mm"));
+
+  uint32_t value = tof.getMeasurementTimingBudgetMicroSeconds();
+  VL53L0X_Error api = tof.Status;
+  allOk &= logTofIntegerSetting(F("TIMING_BUDGET"),
+                                api == VL53L0X_ERROR_NONE ? value : 0, api, F("us"));
+  value = tof.getVcselPulsePeriod(VL53L0X_VCSEL_PERIOD_PRE_RANGE);
+  api = tof.Status;
+  allOk &= logTofIntegerSetting(F("PRE_RANGE_VCSEL"),
+                                api == VL53L0X_ERROR_NONE ? value : 0, api, F("PCLK"));
+  value = tof.getVcselPulsePeriod(VL53L0X_VCSEL_PERIOD_FINAL_RANGE);
+  api = tof.Status;
+  allOk &= logTofIntegerSetting(F("FINAL_RANGE_VCSEL"),
+                                api == VL53L0X_ERROR_NONE ? value : 0, api, F("PCLK"));
+
+  const bool ritMatches = tofRitReadbackAvailable &&
+                         tofRitReadback == (TOF_RIT_ENABLED ? 1 : 0);
+  Serial.print(F("TOF_RIT_MATCH="));
+  Serial.println(!tofRitReadbackAvailable ? F("UNKNOWN") :
+                 (ritMatches ? F("YES") : F("NO")));
+  tofSettingsVerified = allOk && ritMatches;
+  Serial.print(F("TOF_SETTINGS="));
+  Serial.println(tofSettingsVerified ? F("OK") : F("ERROR"));
+  // A settings failure stays visible; ranging diagnostics remain available.
+}
+
 void initializeI2cDevices() {
   Wire.begin();
   Wire.setClock(I2C_CLOCK_HZ);
@@ -158,6 +276,7 @@ void initializeI2cDevices() {
   Serial.println(I2C_CLOCK_HZ);
   Serial.print(F("TOF_INIT="));
   Serial.println(tofReady ? F("OK") : F("ERR"));
+  configureAndLogTofSettings();
 
   if (oledReady) {
     display.setCursor(0, 24);
@@ -474,6 +593,17 @@ void printTofDiagnostics() {
   if (firstStatus) {
     Serial.print(F("NONE"));
   }
+  Serial.print(F(",TOF_RIT_REQUEST="));
+  Serial.print(TOF_RIT_ENABLED ? 1 : 0);
+  Serial.print(F(",TOF_RIT_ENABLE="));
+  if (tofRitReadbackAvailable) {
+    Serial.print(tofRitReadback);  // Boot API readback, not a new per-sample read.
+  } else {
+    Serial.print(F("NA"));
+  }
+  Serial.print(F(",TOF_SETTINGS="));
+  Serial.print(!tofSettingsChecked ? F("NOT_RUN") :
+               (tofSettingsVerified ? F("OK") : F("ERROR")));
 }
 
 void updateSerial() {

@@ -29,6 +29,11 @@ constexpr uint32_t I2C_CLOCK_HZ = 400000UL;
 static_assert(I2C_CLOCK_HZ == 100000UL || I2C_CLOCK_HZ == 400000UL,
               "Use 100 kHz or 400 kHz for the I2C comparison");
 
+// Diagnostic comparison only: keep I2C at 400 kHz and change only this boolean.
+// false disables only RIT; it is not an approved setting for position control.
+constexpr bool TOF_RIT_ENABLED = true;
+constexpr float TOF_LIMIT_FIXED_SCALE = 65536.0F;  // Unsigned 16.16 limits -> stated units
+
 // ST API data formats, not ranging/quality settings.
 constexpr float TOF_RATE_FIXED_SCALE = 65536.0F;  // Unsigned 16.16 -> MCPS
 constexpr float TOF_SPAD_FIXED_SCALE = 256.0F;    // Unsigned 8.8 -> effective SPADs
