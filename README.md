@@ -383,3 +383,7 @@ MD20AのHIGH=上昇／LOW=下降はユーザーの単体動作で確認済みで
 DIR極性、ToF距離と上下方向、取付位置・原点距離、全ストローク所要時間、
 ブザー種別、PT100の実測精度・自己発熱・校正が未確定です。
 上下1サイクルとToF無効時の停止は実装済み・既定無効です。温度制御、移動タイムアウト、自動異常復帰は未実装です。
+## ToF control filtering and OLED target
+
+Automatic actuator position control now uses a first-order EMA with a 1000 ms time constant. Only status-0 positive ranges update the filter; transient API/status errors retain the last filtered distance for up to 1 second. If no valid range arrives for 1 second, PWM is stopped and the cycle returns to IDLE. The OLED keeps Hset and adds `Tgt` (--- in IDLE, 300 mm during upward motion, and the frozen A2 target during descent/hold). Raw ToF diagnostics remain unchanged.
+

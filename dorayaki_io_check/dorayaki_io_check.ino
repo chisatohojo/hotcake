@@ -26,6 +26,9 @@ struct IoData {
   uint8_t tofRangeStatus = 255;
   VL53L0X_Error tofApiError = VL53L0X_ERROR_NONE;
   bool tofValid = false;
+  bool tofFilterInitialized = false;
+  float tofFilteredDistanceMm = NAN;
+  unsigned long tofLastValidMs = 0;
   bool tofApiAttempted = false;
   bool tofDiagnosticAvailable = false;
   uint16_t tofRawDistanceMm = 0;
@@ -93,6 +96,15 @@ float updateEma(float previous, float sample) {
   return previous + ANALOG_FILTER_ALPHA * (sample - previous);
 }
 
+bool tofControlValid() {
+  return ioData.tofFilterInitialized &&
+         (millis() - ioData.tofLastValidMs < TOF_FILTER_TIME_CONSTANT_MS);
+}
+
+float tofControlDistanceMm() {
+  return ioData.tofFilteredDistanceMm;
+}
+
 bool timeReached(unsigned long now, unsigned long target) {
   return static_cast<long>(now - target) >= 0;
 }
@@ -105,7 +117,7 @@ void stopMotor() {
 void enforceSafeOutputs() {
   digitalWrite(PIN_SSR, LOW);
   digitalWrite(PIN_SSR_HOTPLATE, LOW);
-  if (!ACTUATOR_SETUP_CONFIRMED || !ioData.tofValid ||
+  if (!ACTUATOR_SETUP_CONFIRMED || !tofControlValid() ||
       actuatorState == ActuatorState::IDLE || actuatorState == ActuatorState::HOLD) {
     stopMotor();
   }
@@ -439,6 +451,19 @@ void readTof() {
   if (measurement.RangeStatus == 0 && measurement.RangeMilliMeter > 0) {
     ioData.tofDistanceMm = measurement.RangeMilliMeter;
     ioData.tofValid = true;
+    const unsigned long now = millis();
+    if (!ioData.tofFilterInitialized) {
+      ioData.tofFilteredDistanceMm = measurement.RangeMilliMeter;
+      ioData.tofFilterInitialized = true;
+    } else {
+      const unsigned long elapsed = now - ioData.tofLastValidMs;
+      const float alpha = 1.0F - expf(-static_cast<float>(elapsed) /
+                                       static_cast<float>(TOF_FILTER_TIME_CONSTANT_MS));
+      ioData.tofFilteredDistanceMm +=
+          alpha * (static_cast<float>(measurement.RangeMilliMeter) -
+                   ioData.tofFilteredDistanceMm);
+    }
+    ioData.tofLastValidMs = now;
     ++tofStatistics.accepted;
   }
 }
@@ -469,7 +494,7 @@ void startActuatorCycle() {
                             static_cast<float>(ACTUATOR_UPPER_MM));
   cycleHoldMs = static_cast<unsigned long>(ioData.pressTimeSetS * 1000.0F);
   readTof();  // Obtain a fresh position before accepting the cycle.
-  if (!ioData.tofValid) {
+  if (!ioData.tofValid || !tofControlValid()) {
     Serial.println(F("ACTUATOR_START=TOF_INVALID"));
     return;
   }
@@ -481,7 +506,7 @@ void updateActuator() {
     stopMotor();
     return;
   }
-  if (!ACTUATOR_SETUP_CONFIRMED || !ioData.tofValid) {
+  if (!ACTUATOR_SETUP_CONFIRMED || !tofControlValid()) {
     stopMotor();
     actuatorState = ActuatorState::IDLE;
     Serial.println(F("ACTUATOR_ABORT=DISABLED_OR_TOF_INVALID"));
@@ -490,7 +515,7 @@ void updateActuator() {
 
   switch (actuatorState) {
     case ActuatorState::MOVE_UP_INITIAL:
-      if (ioData.tofDistanceMm >= ACTUATOR_UPPER_MM) {
+      if (tofControlDistanceMm() >= ACTUATOR_UPPER_MM) {
         stopMotor();
         actuatorState = ActuatorState::MOVE_DOWN;
       } else {
@@ -498,7 +523,7 @@ void updateActuator() {
       }
       break;
     case ActuatorState::MOVE_DOWN:
-      if (ioData.tofDistanceMm <= cycleTargetMm) {
+      if (tofControlDistanceMm() <= cycleTargetMm) {
         stopMotor();
         holdStartedMs = millis();
         actuatorState = ActuatorState::HOLD;
@@ -513,7 +538,7 @@ void updateActuator() {
       }
       break;
     case ActuatorState::MOVE_UP_RETURN:
-      if (ioData.tofDistanceMm >= ACTUATOR_UPPER_MM) {
+      if (tofControlDistanceMm() >= ACTUATOR_UPPER_MM) {
         stopMotor();
         actuatorState = ActuatorState::IDLE;
       } else {
@@ -606,7 +631,15 @@ void updateDisplay() {
   display.setCursor(0, 10);
   display.print(F("Hset  "));
   display.print(ioData.heightSetMm, 0);
-  display.print(F("mm"));
+  display.print(F(" Tgt "));
+  if (actuatorState == ActuatorState::IDLE) {
+    display.print(F("---"));
+  } else if (actuatorState == ActuatorState::MOVE_UP_INITIAL ||
+             actuatorState == ActuatorState::MOVE_UP_RETURN) {
+    display.print(ACTUATOR_UPPER_MM);
+  } else {
+    display.print(cycleTargetMm, 0);
+  }
 
   display.setCursor(0, 20);
   display.print(F("Temp "));
@@ -617,8 +650,8 @@ void updateDisplay() {
 
   display.setCursor(0, 30);
   display.print(F("ToF  "));
-  if (ioData.tofValid) {
-    display.print(ioData.tofDistanceMm);
+  if (tofControlValid()) {
+    display.print(tofControlDistanceMm(), 0);
     display.print(F("mm"));
   } else {
     display.print(tofFailureLabel());
@@ -746,8 +779,8 @@ void updateSerial() {
   Serial.print(F("s,HEIGHT_SET="));
   Serial.print(ioData.heightSetMm, 0);
   Serial.print(F("mm,TOF="));
-  if (ioData.tofValid) {
-    Serial.print(ioData.tofDistanceMm);
+  if (tofControlValid()) {
+    Serial.print(tofControlDistanceMm(), 0);
     Serial.print(F("mm"));
   } else {
     Serial.print(F("ERR"));

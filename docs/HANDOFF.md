@@ -548,3 +548,7 @@ MD20A単体試験は未実施で、将来の初期PWMは50%予定です。
 | PT100 | 1kΩ修正版の数値表示確認済み・校正未実施 | 実物確認済みの固定抵抗1kΩに対し1000.0Fは正しい。20:32までのログはADC=98～100、R=105.95～108.34Ω、TEMP_ACT=15.2～21.4℃。20:53の内蔵プルアップ版ではADC=99～101、R=107.14～109.54Ω、TEMP_ACT=18.3～24.5℃。読み取り・抵抗換算・温度換算はI/O確認用途として正常。基準温度計との比較・校正、最終温度制御精度の確認は未実施。 |
 | 開始SW / ブザー | LOW固定問題は解決済み | 外付け抵抗の未接続を確認し、ユーザー指定でD4をINPUT_PULLUPへ変更。ユーザーがOLEDで通常HIGH／押下LOWと押下時ブザーを確認。約15秒のSerialログでもHIGH/LOW切替を記録。NO接点をD4とGNDにつなぎ、外付け抵抗は不要。 |
 | MD20A単体試験 | 未実施 | 将来の初期PWMは50%予定。DIR、ToF増減、ストローク時間、PWM、停止方法を別試験で確認する。今回の作業では実施しない。 |
+## ToF 1-second filter and OLED target (2026-10-28)
+
+Added `TOF_FILTER_TIME_CONSTANT_MS=1000` and a time-aware EMA for valid status-0 positive ToF ranges. Temporary errors hold the last filtered distance for less than one second; after one second without a valid range the actuator stops and returns to IDLE. Position thresholds use the filtered distance. OLED row 2 retains Hset and shows the current target as `Tgt` (`---` in IDLE, 300 mm while moving up, and the frozen A2 target while moving down or holding). Raw distance/status diagnostics are retained. No upload or motor test was performed.
+

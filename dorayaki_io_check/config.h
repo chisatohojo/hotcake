@@ -56,6 +56,7 @@ constexpr uint8_t TOF_COMMAND_BYTES_PER_LOOP = 8;
 // Timing
 // -----------------------------------------------------------------------------
 constexpr unsigned long SENSOR_INTERVAL_MS = 100;
+constexpr unsigned long TOF_FILTER_TIME_CONSTANT_MS = 1000;
 constexpr unsigned long DISPLAY_INTERVAL_MS = 250;
 constexpr unsigned long SERIAL_INTERVAL_MS = 1000;
 constexpr unsigned long SWITCH_DEBOUNCE_MS = 30;
