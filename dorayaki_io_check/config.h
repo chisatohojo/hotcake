@@ -34,9 +34,9 @@ static_assert(I2C_CLOCK_HZ == 100000UL || I2C_CLOCK_HZ == 400000UL,
 constexpr bool TOF_RIT_ENABLED = false;
 constexpr float TOF_LIMIT_FIXED_SCALE = 65536.0F;  // Unsigned 16.16 limits -> stated units
 
-// Actuator cycle stays disabled until DIR, distance direction, travel and lower
-// limit have all been checked on the actual mechanism. No jog/test mode here.
-constexpr bool ACTUATOR_SETUP_CONFIRMED = false;
+// Automatic cycle enabled by user instruction; a new start-switch press is required.
+// No jog/test mode or heater control here.
+constexpr bool ACTUATOR_SETUP_CONFIRMED = true;
 constexpr uint8_t MOTOR_PWM_RUN = 255;  // Duty 100 percent
 constexpr uint8_t MOTOR_DIR_UP_LEVEL = HIGH;  // Confirmed: HIGH=up, LOW=down
 constexpr uint8_t MOTOR_DIR_DOWN_LEVEL = MOTOR_DIR_UP_LEVEL == HIGH ? LOW : HIGH;

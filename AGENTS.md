@@ -3,7 +3,7 @@
 このリポジトリは、たい焼き焼印装置のArduino Mega 2560 Rev3プロジェクトです。
 着手時に README.md、docs/HANDOFF.md、docs/NEW_PC_SETUP.md を読んでください。
 
-- 現在はI/O確認版を基にMD20A上下1サイクルを実装済み。SSR（D2/D12）は常にLOW。既定のACTUATOR_SETUP_CONFIRMED=falseではD9のPWM=0を維持する。実機のDIR・距離変化方向・300mm停止位置・下降下限を確認するまで有効化しない。
+- 現在はMD20A上下1サイクルをユーザー指示により有効化済み（ACTUATOR_SETUP_CONFIRMED=true）。上昇HIGH・下降LOW、PWM255、上限300mm・暫定下限50mm。SSR（D2/D12）は常にLOW。起動・待機・保持・ToF無効時のD9 PWM=0を維持する。実機upload・開始操作・運転は明示された作業範囲でのみ行う。
 - 安全系出力を勝手に有効にしない。実機確認前にSSR・モータを自動動作させない。
 - MD20A単体試験は別途明示された試験作業として扱う。上下制御の実装を根拠に自動upload・通電・運転をしない。
 - DIR極性、ToF原点・取付位置など未確定仕様を推測して確定扱いしない。
