@@ -34,6 +34,19 @@ static_assert(I2C_CLOCK_HZ == 100000UL || I2C_CLOCK_HZ == 400000UL,
 constexpr bool TOF_RIT_ENABLED = false;
 constexpr float TOF_LIMIT_FIXED_SCALE = 65536.0F;  // Unsigned 16.16 limits -> stated units
 
+// Actuator cycle stays disabled until DIR, distance direction, travel and lower
+// limit have all been checked on the actual mechanism. No jog/test mode here.
+constexpr bool ACTUATOR_SETUP_CONFIRMED = false;
+constexpr uint8_t MOTOR_PWM_RUN = 128;  // 8-bit PWM: approximately 50 percent
+constexpr uint8_t MOTOR_DIR_UP_LEVEL = HIGH;  // Provisional, NOT verified
+constexpr uint8_t MOTOR_DIR_DOWN_LEVEL = MOTOR_DIR_UP_LEVEL == HIGH ? LOW : HIGH;
+constexpr uint16_t ACTUATOR_UPPER_MM = 300;
+constexpr uint16_t ACTUATOR_LOWER_MIN_MM = 50;  // Provisional; adjust to actual limits
+static_assert(ACTUATOR_LOWER_MIN_MM > 0 && ACTUATOR_LOWER_MIN_MM < ACTUATOR_UPPER_MM,
+              "Lower limit must be positive and below the upper stop");
+static_assert(MOTOR_DIR_UP_LEVEL == LOW || MOTOR_DIR_UP_LEVEL == HIGH,
+              "DIR level must be LOW or HIGH");
+
 // ST API data formats, not ranging/quality settings.
 constexpr float TOF_RATE_FIXED_SCALE = 65536.0F;  // Unsigned 16.16 -> MCPS
 constexpr float TOF_SPAD_FIXED_SCALE = 256.0F;    // Unsigned 8.8 -> effective SPADs

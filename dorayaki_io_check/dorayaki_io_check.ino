@@ -38,6 +38,17 @@ struct IoData {
 
 IoData ioData;
 
+enum class ActuatorState : uint8_t {
+  IDLE, MOVE_UP_INITIAL, MOVE_DOWN, HOLD, MOVE_UP_RETURN
+};
+ActuatorState actuatorState = ActuatorState::IDLE;
+uint8_t motorPwmOutput = 0;
+uint8_t motorDirOutput = LOW;
+float cycleTargetMm = ACTUATOR_LOWER_MIN_MM;
+unsigned long cycleHoldMs = 0;
+unsigned long holdStartedMs = 0;
+
+
 struct TofStatistics {
   uint32_t attempts;
   uint32_t accepted;
@@ -86,12 +97,35 @@ bool timeReached(unsigned long now, unsigned long target) {
   return static_cast<long>(now - target) >= 0;
 }
 
-void enforceSafeOutputs() {
-  // Phase 1 output invariant: motor PWM=0 and both SSR control pins=LOW.
-  digitalWrite(PIN_MOTOR_DIR, LOW);  // Direction is not yet defined; level is harmless at PWM=0.
+void stopMotor() {
   analogWrite(PIN_MOTOR_PWM, 0);
+  motorPwmOutput = 0;
+}
+
+void enforceSafeOutputs() {
   digitalWrite(PIN_SSR, LOW);
   digitalWrite(PIN_SSR_HOTPLATE, LOW);
+  if (!ACTUATOR_SETUP_CONFIRMED || !ioData.tofValid ||
+      actuatorState == ActuatorState::IDLE || actuatorState == ActuatorState::HOLD) {
+    stopMotor();
+  }
+}
+
+void driveMotor(bool up) {
+  if (!ACTUATOR_SETUP_CONFIRMED) {
+    stopMotor();
+    return;
+  }
+  const uint8_t direction = up ? MOTOR_DIR_UP_LEVEL : MOTOR_DIR_DOWN_LEVEL;
+  if (motorDirOutput != direction) {
+    stopMotor();  // Remove PWM before changing DIR.
+    digitalWrite(PIN_MOTOR_DIR, direction);
+    motorDirOutput = direction;
+  }
+  if (motorPwmOutput != MOTOR_PWM_RUN) {
+    analogWrite(PIN_MOTOR_PWM, MOTOR_PWM_RUN);
+    motorPwmOutput = MOTOR_PWM_RUN;
+  }
 }
 
 void setBuzzerOutput(bool on) {
@@ -409,6 +443,90 @@ void readTof() {
   }
 }
 
+const __FlashStringHelper* actuatorStateLabel() {
+  switch (actuatorState) {
+    case ActuatorState::IDLE: return F("IDLE");
+    case ActuatorState::MOVE_UP_INITIAL: return F("MOVE_UP_INITIAL");
+    case ActuatorState::MOVE_DOWN: return F("MOVE_DOWN");
+    case ActuatorState::HOLD: return F("HOLD");
+    case ActuatorState::MOVE_UP_RETURN: return F("MOVE_UP_RETURN");
+    default: return F("UNKNOWN");
+  }
+}
+
+void startActuatorCycle() {
+  if (actuatorState != ActuatorState::IDLE) {
+    return;  // A press during a cycle is never queued.
+  }
+  stopMotor();
+  if (!ACTUATOR_SETUP_CONFIRMED) {
+    Serial.println(F("ACTUATOR_START=DISABLED"));
+    return;
+  }
+  // Freeze the existing filtered A1/A2 settings at the start-switch edge.
+  cycleTargetMm = constrain(ioData.heightSetMm,
+                            static_cast<float>(ACTUATOR_LOWER_MIN_MM),
+                            static_cast<float>(ACTUATOR_UPPER_MM));
+  cycleHoldMs = static_cast<unsigned long>(ioData.pressTimeSetS * 1000.0F);
+  readTof();  // Obtain a fresh position before accepting the cycle.
+  if (!ioData.tofValid) {
+    Serial.println(F("ACTUATOR_START=TOF_INVALID"));
+    return;
+  }
+  actuatorState = ActuatorState::MOVE_UP_INITIAL;
+}
+
+void updateActuator() {
+  if (actuatorState == ActuatorState::IDLE) {
+    stopMotor();
+    return;
+  }
+  if (!ACTUATOR_SETUP_CONFIRMED || !ioData.tofValid) {
+    stopMotor();
+    actuatorState = ActuatorState::IDLE;
+    Serial.println(F("ACTUATOR_ABORT=DISABLED_OR_TOF_INVALID"));
+    return;  // No automatic restart when ranging recovers.
+  }
+
+  switch (actuatorState) {
+    case ActuatorState::MOVE_UP_INITIAL:
+      if (ioData.tofDistanceMm >= ACTUATOR_UPPER_MM) {
+        stopMotor();
+        actuatorState = ActuatorState::MOVE_DOWN;
+      } else {
+        driveMotor(true);
+      }
+      break;
+    case ActuatorState::MOVE_DOWN:
+      if (ioData.tofDistanceMm <= cycleTargetMm) {
+        stopMotor();
+        holdStartedMs = millis();
+        actuatorState = ActuatorState::HOLD;
+      } else {
+        driveMotor(false);
+      }
+      break;
+    case ActuatorState::HOLD:
+      stopMotor();
+      if (millis() - holdStartedMs >= cycleHoldMs) {
+        actuatorState = ActuatorState::MOVE_UP_RETURN;
+      }
+      break;
+    case ActuatorState::MOVE_UP_RETURN:
+      if (ioData.tofDistanceMm >= ACTUATOR_UPPER_MM) {
+        stopMotor();
+        actuatorState = ActuatorState::IDLE;
+      } else {
+        driveMotor(true);
+      }
+      break;
+    default:
+      stopMotor();
+      actuatorState = ActuatorState::IDLE;
+      break;
+  }
+}
+
 void readStartSwitch() {
   const unsigned long now = millis();
   const bool rawPressed = (digitalRead(PIN_START_SWITCH) == LOW);
@@ -425,6 +543,7 @@ void readStartSwitch() {
 
     if (switchStablePressed) {
       beep();
+      startActuatorCycle();
     }
   }
 }
@@ -519,7 +638,8 @@ void updateDisplay() {
   display.print(ioData.startPressed ? F("LOW") : F("HIGH"));
 
   display.setCursor(0, 50);
-  display.print(F("SSR OFF  PWM 0"));  // Matches the enforced Phase 1 invariant.
+  display.print(F("SSR OFF  PWM "));
+  display.print(motorPwmOutput);
   display.display();
 }
 
@@ -641,8 +761,18 @@ void updateSerial() {
 
   Serial.print(F(",START_SW="));
   Serial.print(ioData.startPressed ? F("LOW") : F("HIGH"));
-  Serial.print(F(",SSR=OFF,MOTOR_PWM=0,HOTPLATE_SSR=OFF"));
+  Serial.print(F(",SSR=OFF,MOTOR_PWM="));
+  Serial.print(motorPwmOutput);
+  Serial.print(F(",HOTPLATE_SSR=OFF"));
   printTofDiagnostics();
+  Serial.print(F(",ACTUATOR_STATE="));
+  Serial.print(actuatorStateLabel());
+  Serial.print(F(",ACTUATOR_SETUP_CONFIRMED="));
+  Serial.print(ACTUATOR_SETUP_CONFIRMED ? 1 : 0);
+  Serial.print(F(",CYCLE_TARGET_MM="));
+  Serial.print(cycleTargetMm, 1);
+  Serial.print(F(",CYCLE_HOLD_MS="));
+  Serial.print(cycleHoldMs);
   Serial.println();
 }
 
@@ -691,7 +821,7 @@ void setup() {
 void loop() {
   const unsigned long now = millis();
 
-  // Reassert safety outputs on every loop. No sensor result can energize them.
+  // Both SSRs stay LOW; disabled/idle/hold/invalid-position motor stays stopped.
   enforceSafeOutputs();
   readStartSwitch();
   updateBuzzer();
@@ -703,6 +833,8 @@ void loop() {
     readPt100();
     readTof();
   }
+
+  updateActuator();
 
   if ((now - lastDisplayMs) >= DISPLAY_INTERVAL_MS) {
     lastDisplayMs = now;
