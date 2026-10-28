@@ -1,5 +1,16 @@
 # 開発引き継ぎ
 
+## 自動運転有効版の書き込み・起動確認（2026-10-28）
+
+commit `624c905ccf79f0df3201f525f2dad9a67905a2df` を通常push後、ユーザーのヒーター・両SSR負荷切り離し、可動部周囲の安全、非常停止使用可能の確認を受けてCOM4のMega 2560へ書き込みました。
+コンパイル済みconfigとの一致を確認し、upload --verify成功（終了コード0、ATmega2560署名1E 98 01、39,024 bytesのフラッシュ照合一致）。当初COM4は使用中でしたが、ユーザーがモニタを閉じた後に書き込みを1回実行しました。
+20:44:20（日本時間）から115200bpsで約12秒の起動ログを取得。OLED_INIT=OK、TOF_INIT=OK、RIT_REQUEST=0／RIT_MATCH=YES、TOF_SETTINGS=OK、I2C_CLOCK_HZ=400000を確認しました。
+全11行でACTUATOR_SETUP_CONFIRMED=1、ACTUATOR_STATE=IDLE、MOTOR_PWM=0、SSR=OFF、HOTPLATE_SSR=OFF。最後の完全行はN=82、OK=82、API_ERRS=0、BAD_RANGE=0。距離スナップショットは300～306mmでした。
+開始SWはHIGH、設定表示は時間3.6秒・高さ149mm。未開始のCYCLE_TARGET_MM=50／CYCLE_HOLD_MS=0は初期値で、サイクル開始時にA1/A2から固定されます。
+Codexは開始SW操作・H/L等の駆動指示を一切行っていません。最初の自動運転と実動作確認はユーザー自身が行います。Serialポートは閉じています。端子電圧は今回実測していません。
+現在の実機は一時方向確認スケッチから本番の自動上下運転有効版へ更新済みです。生ログ・書き込み結果はGit管理外の `build/verify-52254bae8558439e9e4e21ddb22a81c2/` に保存しました。
+
+
 ## 現在: 開始SWによる自動上下運転を有効化（2026-10-28）
 
 ユーザー確認済みの報告: HIGH=上昇、LOW=下降、上昇時にToF距離が増加、300mmまで機械的に移動可能、Duty 100%を採用。
