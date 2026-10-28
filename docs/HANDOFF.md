@@ -552,3 +552,7 @@ MD20A単体試験は未実施で、将来の初期PWMは50%予定です。
 
 Added `TOF_FILTER_TIME_CONSTANT_MS=1000` and a time-aware EMA for valid status-0 positive ToF ranges. Temporary errors hold the last filtered distance for less than one second; after one second without a valid range the actuator stops and returns to IDLE. Position thresholds use the filtered distance. OLED row 2 retains Hset and shows the current target as `Tgt` (`---` in IDLE, 300 mm while moving up, and the frozen A2 target while moving down or holding). Raw distance/status diagnostics are retained. No upload or motor test was performed.
 
+## SSR control implementation (2026-10-28)
+
+Added `ENABLE_IMPRINT_SSR` (D12) and `ENABLE_HOTPLATE_SSR` (D2), both defaulting to `false`. Disabled flags force LOW. If enabled after confirming SSR polarity, electrical compatibility, and load ratings, D12 applies ±5 °C hysteresis around A0/PT100 and fails OFF; D2 is enabled only after initialization while in valid IDLE and is OFF during actuator motion, HOLD, or invalid ToF. OLED and Serial now show both commanded SSR states. Upload and load-side heating tests were not performed.
+

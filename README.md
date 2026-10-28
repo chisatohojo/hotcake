@@ -387,3 +387,7 @@ DIR極性、ToF距離と上下方向、取付位置・原点距離、全スト�
 
 Automatic actuator position control now uses a first-order EMA with a 1000 ms time constant. Only status-0 positive ranges update the filter; transient API/status errors retain the last filtered distance for up to 1 second. If no valid range arrives for 1 second, PWM is stopped and the cycle returns to IDLE. The OLED keeps Hset and adds `Tgt` (--- in IDLE, 300 mm during upward motion, and the frozen A2 target during descent/hold). Raw ToF diagnostics remain unchanged.
 
+## SSR control status (2026-10-28)
+
+Added independent `ENABLE_IMPRINT_SSR` (D12) and `ENABLE_HOTPLATE_SSR` (D2) flags in `config.h`; both default to `false`, so both outputs remain LOW. When explicitly enabled after hardware confirmation, D12 uses ±5 °C hysteresis around the A0 setpoint and turns OFF on invalid PT100 data. D2 is ON only after initialization in valid IDLE, and OFF during all actuator states or invalid ToF. OLED row 6 and Serial report both commanded SSR states and motor PWM. No upload or load-side heating test was performed.
+

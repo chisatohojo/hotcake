@@ -66,6 +66,9 @@ bool tofStatisticsResetRequested = false;
 
 bool oledReady = false;
 bool tofReady = false;
+bool initializationComplete = false;
+bool imprintSsrOutput = false;
+bool hotplateSsrOutput = false;
 bool tofSettingsChecked = false;
 bool tofSettingsVerified = false;
 bool tofRitReadbackAvailable = false;
@@ -114,9 +117,27 @@ void stopMotor() {
   motorPwmOutput = 0;
 }
 
+void updateSsrOutputs() {
+  bool nextImprint = false;
+  if (ENABLE_IMPRINT_SSR && ioData.pt100Valid) {
+    if (ioData.temperatureActualC <= ioData.temperatureSetC - 5.0F) {
+      nextImprint = true;
+    } else if (ioData.temperatureActualC >= ioData.temperatureSetC + 5.0F) {
+      nextImprint = false;
+    } else {
+      nextImprint = imprintSsrOutput;
+    }
+  }
+  imprintSsrOutput = nextImprint;
+
+  hotplateSsrOutput = ENABLE_HOTPLATE_SSR && initializationComplete &&
+                      tofControlValid() && actuatorState == ActuatorState::IDLE;
+  digitalWrite(PIN_SSR, imprintSsrOutput ? HIGH : LOW);
+  digitalWrite(PIN_SSR_HOTPLATE, hotplateSsrOutput ? HIGH : LOW);
+}
+
 void enforceSafeOutputs() {
-  digitalWrite(PIN_SSR, LOW);
-  digitalWrite(PIN_SSR_HOTPLATE, LOW);
+  updateSsrOutputs();
   if (!ACTUATOR_SETUP_CONFIRMED || !tofControlValid() ||
       actuatorState == ActuatorState::IDLE || actuatorState == ActuatorState::HOLD) {
     stopMotor();
@@ -671,7 +692,11 @@ void updateDisplay() {
   display.print(ioData.startPressed ? F("LOW") : F("HIGH"));
 
   display.setCursor(0, 50);
-  display.print(F("SSR OFF  PWM "));
+  display.print(F("S "));
+  display.print(imprintSsrOutput ? F("ON") : F("OFF"));
+  display.print(F(" H "));
+  display.print(hotplateSsrOutput ? F("ON") : F("OFF"));
+  display.print(F(" P "));
   display.print(motorPwmOutput);
   display.display();
 }
@@ -794,9 +819,12 @@ void updateSerial() {
 
   Serial.print(F(",START_SW="));
   Serial.print(ioData.startPressed ? F("LOW") : F("HIGH"));
-  Serial.print(F(",SSR=OFF,MOTOR_PWM="));
+  Serial.print(F(",SSR="));
+  Serial.print(imprintSsrOutput ? F("ON") : F("OFF"));
+  Serial.print(F(",MOTOR_PWM="));
   Serial.print(motorPwmOutput);
-  Serial.print(F(",HOTPLATE_SSR=OFF"));
+  Serial.print(F(",HOTPLATE_SSR="));
+  Serial.print(hotplateSsrOutput ? F("ON") : F("OFF"));
   printTofDiagnostics();
   Serial.print(F(",ACTUATOR_STATE="));
   Serial.print(actuatorStateLabel());
@@ -842,6 +870,8 @@ void setup() {
   readPt100();
   resetTofStatistics();
   readTof();
+  initializationComplete = true;
+  enforceSafeOutputs();
   updateDisplay();
   updateSerial();
 
@@ -868,6 +898,7 @@ void loop() {
   }
 
   updateActuator();
+  enforceSafeOutputs();
 
   if ((now - lastDisplayMs) >= DISPLAY_INTERVAL_MS) {
     lastDisplayMs = now;
