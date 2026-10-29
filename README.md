@@ -393,3 +393,5 @@ Added independent `ENABLE_IMPRINT_SSR` (D12) and `ENABLE_HOTPLATE_SSR` (D2) flag
 
 SSR control flags are now enabled by explicit user instruction (`ENABLE_IMPRINT_SSR=true`, `ENABLE_HOTPLATE_SSR=true`). The firmware has not been uploaded and no SSR load-side energization test has been performed.
 
+The actuator upper stop target is now `ACTUATOR_UPPER_MM=250` by explicit user instruction. The lower provisional limit remains 50 mm; no upload or motion test was performed for this setting change.
+

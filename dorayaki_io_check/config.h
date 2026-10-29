@@ -45,7 +45,7 @@ constexpr bool ACTUATOR_SETUP_CONFIRMED = true;
 constexpr uint8_t MOTOR_PWM_RUN = 255;  // Duty 100 percent
 constexpr uint8_t MOTOR_DIR_UP_LEVEL = HIGH;  // Confirmed: HIGH=up, LOW=down
 constexpr uint8_t MOTOR_DIR_DOWN_LEVEL = MOTOR_DIR_UP_LEVEL == HIGH ? LOW : HIGH;
-constexpr uint16_t ACTUATOR_UPPER_MM = 300;
+constexpr uint16_t ACTUATOR_UPPER_MM = 250;
 constexpr uint16_t ACTUATOR_LOWER_MIN_MM = 50;  // Provisional; adjust to actual limits
 static_assert(ACTUATOR_LOWER_MIN_MM > 0 && ACTUATOR_LOWER_MIN_MM < ACTUATOR_UPPER_MM,
               "Lower limit must be positive and below the upper stop");

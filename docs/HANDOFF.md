@@ -558,3 +558,5 @@ Added `ENABLE_IMPRINT_SSR` (D12) and `ENABLE_HOTPLATE_SSR` (D2), both defaulting
 
 SSR flags were changed to true by explicit user instruction on 2026-10-29. This source change has not been uploaded; SSR polarity, electrical compatibility, and load behavior still require the planned hardware confirmation before energization.
 
+On 2026-10-29 the user changed the actuator upper ToF stop target from 300 mm to 250 mm (`ACTUATOR_UPPER_MM=250`). Lower provisional limit remains 50 mm. This source change has not been uploaded or motion-tested.
+
