@@ -19,8 +19,8 @@ constexpr uint8_t PIN_SSR = 12;
 
 // SSR control is disabled until input polarity, electrical compatibility, and
 // load ratings are confirmed on the actual hardware. HIGH=ON is provisional.
-constexpr bool ENABLE_HOTPLATE_SSR = false;
-constexpr bool ENABLE_IMPRINT_SSR = false;
+constexpr bool ENABLE_HOTPLATE_SSR = true;
+constexpr bool ENABLE_IMPRINT_SSR = true;
 
 // Mega 2560 hardware I2C pins are fixed at SDA=D20 and SCL=D21.
 constexpr uint8_t OLED_I2C_ADDRESS = 0x3C;

@@ -556,3 +556,5 @@ Added `TOF_FILTER_TIME_CONSTANT_MS=1000` and a time-aware EMA for valid status-0
 
 Added `ENABLE_IMPRINT_SSR` (D12) and `ENABLE_HOTPLATE_SSR` (D2), both defaulting to `false`. Disabled flags force LOW. If enabled after confirming SSR polarity, electrical compatibility, and load ratings, D12 applies ±5 °C hysteresis around A0/PT100 and fails OFF; D2 is enabled only after initialization while in valid IDLE and is OFF during actuator motion, HOLD, or invalid ToF. OLED and Serial now show both commanded SSR states. Upload and load-side heating tests were not performed.
 
+SSR flags were changed to true by explicit user instruction on 2026-10-29. This source change has not been uploaded; SSR polarity, electrical compatibility, and load behavior still require the planned hardware confirmation before energization.
+

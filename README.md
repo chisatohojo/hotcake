@@ -391,3 +391,5 @@ Automatic actuator position control now uses a first-order EMA with a 1000 ms ti
 
 Added independent `ENABLE_IMPRINT_SSR` (D12) and `ENABLE_HOTPLATE_SSR` (D2) flags in `config.h`; both default to `false`, so both outputs remain LOW. When explicitly enabled after hardware confirmation, D12 uses ±5 °C hysteresis around the A0 setpoint and turns OFF on invalid PT100 data. D2 is ON only after initialization in valid IDLE, and OFF during all actuator states or invalid ToF. OLED row 6 and Serial report both commanded SSR states and motor PWM. No upload or load-side heating test was performed.
 
+SSR control flags are now enabled by explicit user instruction (`ENABLE_IMPRINT_SSR=true`, `ENABLE_HOTPLATE_SSR=true`). The firmware has not been uploaded and no SSR load-side energization test has been performed.
+
